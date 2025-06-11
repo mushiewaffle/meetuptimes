@@ -1,0 +1,1274 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { parseISO, format } from 'date-fns';
+import html2canvas from 'html2canvas';
+import './App.css';
+
+// Components
+import FestivalScheduleUploader from './components/FestivalScheduleUploader';
+import VenmoTipJar from './components/VenmoTipJar';
+import deduplicateSets from './utils/deduplicateSets';
+import findSharedGaps from './utils/findSharedGaps';
+
+/**
+ * Festival Meetup Times Planner App
+ */
+function App() {
+  // Page navigation state - controls which page is currently shown
+  // Values: 'main', 'meetupGaps', 'meetupPlan'
+  const [currentPage, setCurrentPage] = useState('main');
+  
+  // State for storing schedules
+  const [schedules, setSchedules] = useState([]);
+  
+  // State for meetup time gaps
+  const [meetupGaps, setMeetupGaps] = useState([]);
+  
+  // State for selected meetup gaps
+  const [selectedGaps, setSelectedGaps] = useState({});
+  
+  // State for finalized meetup plan
+  const [meetupPlan, setMeetupPlan] = useState([]);
+  
+  // State for tracking which meetup's location is being edited
+  const [editingLocationIndex, setEditingLocationIndex] = useState(null);
+  const [editingLocation, setEditingLocation] = useState('');
+  
+  // Current schedule being edited
+  const [currentSchedule, setCurrentSchedule] = useState({
+    name: '',
+    sets: []
+  });
+  
+  // Counter for naming schedules
+  const [scheduleCounter, setScheduleCounter] = useState(1);
+  
+  // Show/hide instructions
+  const [showInstructions, setShowInstructions] = useState(false);
+  
+  // Toggle reference for manual/upload mode
+  const toggleModeRef = useRef(null);
+  // Default to image upload mode (not manual)
+  const [isManualMode, setIsManualMode] = useState(false);
+  
+  // Handle clicking outside the instructions popup
+  useEffect(() => {
+    if (showInstructions) {
+      const handleClickOutside = (event) => {
+        if (event.target.closest('.instructions-popup') === null && 
+            !event.target.closest('.help-button')) {
+          setShowInstructions(false);
+        }
+      };
+      
+      const handleEscape = (event) => {
+        if (event.key === 'Escape') {
+          setShowInstructions(false);
+        }
+      };
+      
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+      
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+        document.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [showInstructions]);
+  
+  // Track which schedules are expanded
+  const [expandedSchedules, setExpandedSchedules] = useState({});
+  
+  // Track which schedule is being edited (for name editing)
+  const [editingScheduleIndex, setEditingScheduleIndex] = useState(null);
+  const [editingScheduleName, setEditingScheduleName] = useState('');
+  
+  // Animation properties for fade-in transitions
+  // (Animation handled through CSS classes instead)
+  
+  // Load saved data on initial render
+  useEffect(() => {
+    try {
+      const savedSchedules = localStorage.getItem('festivalSchedules');
+      const savedMeetups = localStorage.getItem('festivalMeetups');
+      
+      if (savedSchedules) {
+        const parsedSchedules = JSON.parse(savedSchedules);
+        setSchedules(parsedSchedules);
+        
+        if (parsedSchedules.length > 0) {
+          setScheduleCounter(parsedSchedules.length + 1);
+        }
+      }
+      
+      if (savedMeetups) {
+        const parsedMeetups = JSON.parse(savedMeetups);
+        setSelectedGaps(parsedMeetups.selectedGaps || {});
+        setMeetupPlan(parsedMeetups.meetupPlan || []);
+      }
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+    }
+  }, []);
+  
+  // Save data when it changes
+  useEffect(() => {
+    try {
+      if (schedules.length > 0) {
+        localStorage.setItem('festivalSchedules', JSON.stringify(schedules));
+      }
+      
+      if (Object.keys(selectedGaps).length > 0 || meetupPlan.length > 0) {
+        localStorage.setItem('festivalMeetups', JSON.stringify({ 
+          selectedGaps,
+          meetupPlan 
+        }));
+      }
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [schedules, selectedGaps, meetupPlan]);
+  
+  /**
+   * Handle adding a new schedule
+   */
+  const handleAddSchedule = () => {
+    try {
+      // Validate sets exist
+      if (!currentSchedule.sets || currentSchedule.sets.length === 0) {
+        alert('Please upload a schedule with set times first');
+        return;
+      }
+      
+      // Use default name if not provided
+      const scheduleName = currentSchedule.name.trim() || `Schedule ${scheduleCounter}`;
+      
+      // Create deep copy of sets
+      const setsCopy = JSON.parse(JSON.stringify(currentSchedule.sets));
+      
+      // Add the schedule
+      setSchedules([...schedules, { name: scheduleName, sets: setsCopy }]);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset current schedule
+      setCurrentSchedule({ name: '', sets: [] });
+      
+      // Clear the uploader
+      document.dispatchEvent(new CustomEvent('clearUploader'));
+      
+      // Reset any found gaps as they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Reset to main page if we were on another page
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
+      }
+      
+      console.log(`Added schedule: ${scheduleName}`);
+    } catch (error) {
+      console.error('Error adding schedule:', error);
+      alert('There was an error adding the schedule. Please try again.');
+    }
+  };
+  
+  /**
+   * Remove a schedule by index
+   * @param {number} index - The index of the schedule to remove
+   */
+  const removeSchedule = (index) => {
+    try {
+      const updatedSchedules = [...schedules];
+      updatedSchedules.splice(index, 1);
+      setSchedules(updatedSchedules);
+      
+      // Reset gaps since they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Reset to main page if we were on another page
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
+      }
+    } catch (error) {
+      console.error('Error removing schedule:', error);
+    }
+  };
+  
+  /**
+   * Toggle expanded state for a schedule
+   * @param {number} index - The index of the schedule to toggle
+   */
+  const toggleScheduleExpanded = (index) => {
+    setExpandedSchedules(prev => ({
+      ...prev,
+      [index]: !prev[index]
+    }));
+  };
+  
+  /**
+   * Handle extracted sets from schedule uploader
+   * @param {Array} extractedSets - Array of extracted set objects
+   */
+  const handleSetsExtracted = (extractedSets) => {
+    try {
+      if (!extractedSets || extractedSets.length === 0) {
+        return;
+      }
+      
+      // Deduplicate within the new sets first
+      const deduplicatedNewSets = deduplicateSets([], extractedSets);
+      
+      // Then merge with current sets
+      const currentSets = currentSchedule.sets || [];
+      const uniqueSets = deduplicateSets(currentSets, deduplicatedNewSets);
+      
+      // Update current schedule
+      setCurrentSchedule({
+        ...currentSchedule,
+        sets: uniqueSets
+      });
+    } catch (error) {
+      console.error('Error processing extracted sets:', error);
+    }
+  };
+  
+  /**
+   * Find shared time gaps between schedules
+   */
+  const findMeetupGaps = () => {
+    if (schedules.length < 2) {
+      alert('Please add at least two schedules with set times before finding meetup gaps');
+      return;
+    }
+    
+    try {
+      // Find all shared gaps
+      const gaps = findSharedGaps(schedules);
+      
+      if (gaps.length === 0) {
+        alert('No shared time gaps found between your schedules. Try adding more schedules or more sets.');
+        return;
+      }
+      
+      // Helper function to adjust time for festival sorting (8am as starting point)
+      const getAdjustedSortTime = (date) => {
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        
+        // Calculate hours offset from 8am (0-23 hours scale)
+        // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
+        const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
+        
+        // Return a comparable value (hours * 60 + minutes) for easy sorting
+        return adjustedHours * 60 + minutes;
+      };
+
+      // Sort gaps: recommended first, then by festival time (8am as starting point)
+      gaps.sort((a, b) => {
+        if (a.isRecommended !== b.isRecommended) {
+          return a.isRecommended ? -1 : 1;
+        }
+        const timeA = getAdjustedSortTime(new Date(a.start));
+        const timeB = getAdjustedSortTime(new Date(b.start));
+        return timeA - timeB;
+      });
+      
+      // Set the found gaps
+      setMeetupGaps(gaps);
+      
+      // Reset selections and plan
+      setSelectedGaps({});
+      setMeetupPlan([]);
+      
+      console.log(`Found ${gaps.length} potential meetup gaps`);
+      
+      // Change to the meetup gaps page
+      setCurrentPage('meetupGaps');
+      
+      // Scroll to top on page change
+      window.scrollTo(0, 0);
+    } catch (error) {
+      console.error('Error finding meetup gaps:', error);
+      alert('There was an error finding meetup times. Please try again.');
+    }
+  };
+  
+  /**
+   * Toggle selection of a meetup gap
+   * @param {number} index - The index of the gap to toggle
+   */
+  const toggleGapSelection = (index) => {
+    setSelectedGaps(prev => {
+      const newSelected = { ...prev };
+      
+      if (newSelected[index]) {
+        delete newSelected[index];
+      } else {
+        newSelected[index] = true;
+      }
+      
+      return newSelected;
+    });
+  };
+  
+  /**
+   * Navigate back to a previous page
+   * @param {string} targetPage - The page to navigate back to
+   */
+  const navigateBack = (targetPage) => {
+    setCurrentPage(targetPage);
+    // Scroll to top on page change
+    window.scrollTo(0, 0);
+  };
+  
+  /**
+   * Start editing a schedule name
+   * @param {number} index - The index of the schedule to edit
+   */
+  const startEditingScheduleName = (index) => {
+    setEditingScheduleIndex(index);
+    setEditingScheduleName(schedules[index].name);
+  };
+  
+  /**
+   * Save edited schedule name
+   */
+  const saveScheduleName = () => {
+    if (editingScheduleIndex === null) return;
+    
+    try {
+      const updatedSchedules = [...schedules];
+      updatedSchedules[editingScheduleIndex] = {
+        ...updatedSchedules[editingScheduleIndex],
+        name: editingScheduleName.trim() || `Schedule ${editingScheduleIndex + 1}`
+      };
+      
+      setSchedules(updatedSchedules);
+      setEditingScheduleIndex(null);
+      setEditingScheduleName('');
+    } catch (error) {
+      console.error('Error saving schedule name:', error);
+      alert('There was an error saving the schedule name. Please try again.');
+    }
+  };
+  
+  /**
+   * Cancel editing schedule name
+   */
+  const cancelEditingScheduleName = () => {
+    setEditingScheduleIndex(null);
+    setEditingScheduleName('');
+  };
+  
+  /**
+   * Save meetup plan as image
+   */
+  const meetupPlanRef = useRef(null);
+  
+  const saveMeetupPlanAsImage = () => {
+    if (!meetupPlanRef.current) return;
+    
+    // If user is currently editing a meetup location, save it first and then continue
+    if (editingLocationIndex !== null) {
+      // Save the current edit
+      saveLocation();
+      
+      // Wait for the DOM to update completely
+      setTimeout(() => {
+        // Ensure editing state is cleared
+        setEditingLocationIndex(null);
+        setEditingLocation('');
+        
+        // Continue with the image saving process
+        processSaveImage();
+      }, 200);
+      
+      return;
+    }
+    
+    // If not editing, proceed directly
+    processSaveImage();
+  };
+  
+  // Helper function to handle the actual image capture logic
+  const processSaveImage = () => {
+    // No longer checking for missing locations - proceed directly
+    
+    try {
+      // Create a new offscreen element (this won't be visible to the user)
+      const offscreenElement = meetupPlanRef.current.cloneNode(true);
+      
+      // Apply screenshot styling to the clone (not the visible element)
+      offscreenElement.classList.add('screenshot-mode');
+      
+      // Position the element offscreen but still render it
+      const offscreenContainer = document.createElement('div');
+      offscreenContainer.style.position = 'absolute';
+      offscreenContainer.style.left = '-9999px';
+      offscreenContainer.style.top = '0';
+      offscreenContainer.style.width = `${meetupPlanRef.current.offsetWidth}px`;
+      offscreenContainer.appendChild(offscreenElement);
+      document.body.appendChild(offscreenContainer);
+      
+      // Configure the html2canvas options
+      // Make the offscreen container more narrow for a better fit in the image
+      offscreenContainer.style.maxWidth = '600px';
+      
+      const options = {
+        backgroundColor: '#121212',
+        scale: window.innerWidth < 768 ? 2 : 3, // Higher scale on larger screens
+        logging: false,
+        allowTaint: true,
+        useCORS: true,
+        scrollX: 0,
+        scrollY: 0, // No need to adjust scroll for offscreen element
+        windowWidth: Math.min(600, window.innerWidth), // Reduce max width to make screenshot less wide
+        windowHeight: window.innerHeight,
+      };
+      
+      // Show a loading indicator while capturing
+      const saveButton = document.getElementById('save-image-button');
+      const originalText = saveButton.innerHTML;
+      saveButton.disabled = true;
+      saveButton.innerHTML = '<svg class="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Saving...';
+      
+      // Render the offscreen element
+      html2canvas(offscreenElement, options).then(canvas => {
+        // Create image data
+        const date = new Date().toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric'
+        }).replace(/\s/g, '-');
+        const filename = `Festival-Meetup-Plan-${date}.png`;
+        const imgData = canvas.toDataURL('image/png');
+        
+        // Check if on mobile device
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        
+        if (isMobile) {
+          // On mobile, use a different approach to save to camera roll
+          // First, try to use the native share API if available
+          if (navigator.share && canvas.toBlob) {
+            canvas.toBlob(blob => {
+              const file = new File([blob], filename, { type: 'image/png' });
+              navigator.share({
+                files: [file],
+                title: 'Festival Meetup Plan',
+              }).catch(() => {
+                // Fallback if share API fails
+                const link = document.createElement('a');
+                link.download = filename;
+                link.href = imgData;
+                link.click();
+              });
+            });
+          } else {
+            // For iOS Safari, open image in new tab first
+            const newTab = window.open();
+            if (newTab) {
+              newTab.document.write(`<img src="${imgData}" alt="Festival Meetup Plan" style="max-width:100%"/><div style="text-align:center;margin-top:20px;font-family:sans-serif">Press and hold image to save to your photos</div>`);
+            } else {
+              // Fallback to regular download if popup is blocked
+              const link = document.createElement('a');
+              link.download = filename;
+              link.href = imgData;
+              link.click();
+            }
+          }
+        } else {
+          // On desktop, use standard download approach
+          const link = document.createElement('a');
+          link.download = filename;
+          link.href = imgData;
+          link.click();
+        }
+        
+        // Clean up
+        document.body.removeChild(offscreenContainer);
+        saveButton.disabled = false;
+        saveButton.innerHTML = originalText;
+        
+      }).catch(error => {
+        console.error('Error saving image:', error);
+        alert('There was an error creating the screenshot. Please try again.');
+        document.body.removeChild(offscreenContainer);
+        saveButton.disabled = false;
+        saveButton.innerHTML = originalText;
+      });
+    } catch (error) {
+      console.error('Error capturing meetup plan:', error);
+      alert('There was an error creating the screenshot. Please try again.');
+      // Make sure the button is restored
+      const saveButton = document.getElementById('save-image-button');
+      if (saveButton) {
+        saveButton.disabled = false;
+        saveButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 16v-4" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6" /></svg> Save as Image';
+      }
+    }
+  };
+  
+  /**
+   * Reset the entire app to initial state
+   */
+  const resetApp = () => {
+    // Show confirmation dialog before resetting
+    const confirmReset = window.confirm(
+      "Are you sure you want to reset everything? This will delete all schedules and meetup plans."
+    );
+    
+    if (!confirmReset) return;
+    
+    try {
+      // Clear all state
+      setSchedules([]);
+      setMeetupGaps([]);
+      setSelectedGaps({});
+      setMeetupPlan([]);
+      setCurrentSchedule({ name: '', sets: [] });
+      setScheduleCounter(1);
+      setExpandedSchedules({});
+      setEditingScheduleIndex(null);
+      setEditingScheduleName('');
+      setEditingLocationIndex(null);
+      setEditingLocation('');
+      
+      // Return to main page
+      setCurrentPage('main');
+      
+      // Clear local storage
+      localStorage.removeItem('festivalSchedules');
+      localStorage.removeItem('festivalMeetups');
+      
+      // Scroll back to top
+      window.scrollTo(0, 0);
+      
+      // Clear the uploader if it's present
+      document.dispatchEvent(new CustomEvent('clearUploader'));
+    } catch (error) {
+      console.error('Error resetting app:', error);
+      alert('There was an error resetting the app. Please try refreshing the page.');
+    }
+  };
+  
+  /**
+   * Generate meetup times from selected gaps
+   */
+  const generateMeetups = () => {
+    const selectedIndices = Object.keys(selectedGaps);
+    
+    if (selectedIndices.length === 0) {
+      alert('Please select at least one meetup time gap first');
+      return;
+    }
+    
+    // Process selected gap indices
+    
+    try {
+      // Create a meetup plan from the selected gaps
+      const plan = selectedIndices.map(index => {
+        const gap = meetupGaps[index];
+        if (!gap) return null;
+        
+        // Simply use the gap's existing information without recalculating
+        return {
+          id: `meetup-${Date.now()}-${index}`,
+          start: gap.start,
+          end: gap.end,
+          schedules: gap.commonSchedules || gap.schedules, // Use the same schedules shown in the Potential Meetup Gaps page
+          beforeStage: gap.beforeStage,
+          beforeCommonArtist: gap.beforeCommonArtist,
+          isRecommended: gap.schedules.length === schedules.length,
+          customLocation: '' // Initialize custom location field
+        };
+      })
+      .filter(Boolean);
+      
+      // Sort by start time
+      // Helper function to adjust time for festival sorting (8am as starting point)
+      const getAdjustedSortTime = (date) => {
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        
+        // Calculate hours offset from 8am (0-23 hours scale)
+        // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
+        const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
+        
+        // Return a comparable value (hours * 60 + minutes) for easy sorting
+        return adjustedHours * 60 + minutes;
+      };
+      
+      // Sort by festival time (8am as starting point)
+      plan.sort((a, b) => {
+        const timeA = getAdjustedSortTime(new Date(a.start));
+        const timeB = getAdjustedSortTime(new Date(b.start));
+        return timeA - timeB;
+      });
+      
+      // Plan is now sorted and ready to be displayed
+      
+      // Update the meetup plan
+      setMeetupPlan(plan);
+      
+      // Change to the meetup plan page
+      setCurrentPage('meetupPlan');
+      
+      // Scroll to top on page change
+      window.scrollTo(0, 0);
+    } catch (error) {
+      console.error('Error generating meetup plan:', error);
+      alert('There was an error creating your meetup plan. Please try again.');
+    }
+  };
+
+  /**
+   * Format time for display in 12-hour format
+   * @param {string|Date} time - ISO string or Date object
+   * @returns {string} - Formatted time string
+   */
+  const formatTime = (time) => {
+    try {
+      if (!time) return '--:-- --';
+      const date = typeof time === 'string' ? parseISO(time) : time;
+      if (isNaN(date.getTime())) return '--:-- --';
+      return format(date, 'h:mm a');
+    } catch {
+      // Silent error handling for better UX
+      return '--:-- --';
+    }
+  };
+  
+  /**
+   * Calculate and format a duration
+   * @param {Date|string|number} start - Start time (Date object or ISO string) or minutes directly
+   * @param {Date|string} [end] - End time (Date object or ISO string), optional
+   * @returns {string} - Formatted duration
+   */
+  const formatDuration = (start, end) => {
+    try {
+      if (!start || !end) return '--';
+      
+      let diffMins;
+      
+      // If only one parameter and it's a number, it's already minutes
+      if (typeof start === 'number' && end === undefined) {
+        diffMins = start;
+      } else {
+        // Convert to Date objects if they're strings
+        const startDate = typeof start === 'string' ? parseISO(start) : start;
+        const endDate = typeof end === 'string' ? parseISO(end) : end;
+        
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) return '--';
+        
+        // Calculate difference in minutes
+        const diffMs = endDate.getTime() - startDate.getTime();
+        diffMins = Math.round(diffMs / 60000);
+      }
+      
+      // Format the duration
+      if (diffMins < 0) {
+        return '--';
+      } else if (diffMins < 60) {
+        return `${diffMins} min`;
+      } else {
+        const hours = Math.floor(diffMins / 60);
+        const mins = diffMins % 60;
+        return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+      }
+    } catch {
+      // Silent error handling for better UX
+      return '--';
+    }
+  };
+  
+  /**
+   * Start editing a meetup location
+   * @param {number} index - The index of the meetup to edit
+   */
+  const startEditingLocation = (index) => {
+    const meetup = meetupPlan[index];
+    setEditingLocationIndex(index);
+    setEditingLocation(meetup.customLocation || '');
+  };
+  
+  /**
+   * Save edited meetup location
+   */
+  const saveLocation = () => {
+    if (editingLocationIndex === null) return;
+    
+    const updatedPlan = [...meetupPlan];
+    updatedPlan[editingLocationIndex] = {
+      ...updatedPlan[editingLocationIndex],
+      customLocation: editingLocation.trim()
+    };
+    
+    setMeetupPlan(updatedPlan);
+    setEditingLocationIndex(null);
+    setEditingLocation('');
+  };
+  
+  /**
+   * Cancel editing meetup location
+   */
+  const cancelEditingLocation = () => {
+    setEditingLocationIndex(null);
+    setEditingLocation('');
+  };
+  
+  return (
+    <div className="min-h-screen w-full bg-edc-black bg-festival-pattern bg-cover bg-center py-4 px-2 overflow-x-hidden">
+      <div className="max-w-5xl mx-auto w-full">
+        <header className="text-center mb-8">
+          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-edc-blue to-edc-pink mb-2">
+            Festival Meetup Times Planner
+          </h1>
+          <p className="text-edc-purple text-lg">
+            Find the best times to meet up between your festival sets
+          </p>
+        </header>
+        
+        {/* Main page with schedule input and schedule list */}
+        {currentPage === 'main' && (
+          <div className="flex flex-col gap-6">
+            <div className="w-full space-y-4">
+              {/* Schedule input form */}
+              <div>
+                <h3 className="text-lg font-medium text-edc-blue/90 mb-2">Add a Schedule</h3>
+                <div className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple mb-4">
+                {/* Schedule name section */}
+                <div className="mb-3">
+                  {editingScheduleIndex === -1 ? (
+                    <div className="flex items-center">
+                      <input
+                        type="text"
+                        value={editingScheduleName}
+                        onChange={(e) => setEditingScheduleName(e.target.value)}
+                        className="mr-2 px-2 py-1 text-white bg-black/80 border border-edc-purple/50 rounded text-sm flex-grow"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setCurrentSchedule({ ...currentSchedule, name: editingScheduleName.trim() || `Schedule ${scheduleCounter}` });
+                            setEditingScheduleIndex(null);
+                          } else if (e.key === 'Escape') {
+                            setEditingScheduleIndex(null);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          setCurrentSchedule({ ...currentSchedule, name: editingScheduleName.trim() || `Schedule ${scheduleCounter}` });
+                          setEditingScheduleIndex(null);
+                        }}
+                        className="text-edc-blue hover:text-white text-xs mr-2"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingScheduleIndex(null)}
+                        className="text-gray-400 hover:text-gray-300 text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center">
+                        <span className="text-edc-pink font-bold">{currentSchedule.name || `Schedule ${scheduleCounter}`}</span>
+                        <button
+                          onClick={() => {
+                            setEditingScheduleIndex(-1); // Use -1 to indicate editing the current schedule
+                            setEditingScheduleName(currentSchedule.name || `Schedule ${scheduleCounter}`);
+                          }}
+                          className="ml-2 opacity-30 hover:opacity-100 transition-opacity text-white text-xs"
+                          title="Edit Name"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="flex items-center">
+                        <div className="flex rounded-md overflow-hidden border border-edc-purple/60 mr-3">
+                          <button
+                            onClick={() => isManualMode && toggleModeRef.current?.toggle()}
+                            className={`px-3 py-1 text-xs font-medium transition-all ${!isManualMode 
+                              ? 'bg-edc-purple text-white font-medium' 
+                              : 'bg-black/30 text-white/60 hover:text-white/80'}`}
+                          >
+                            Image Upload
+                          </button>
+                          <button
+                            onClick={() => !isManualMode && toggleModeRef.current?.toggle()}
+                            className={`px-3 py-1 text-xs font-medium transition-all ${isManualMode 
+                              ? 'bg-edc-purple text-white font-medium' 
+                              : 'bg-black/30 text-white/60 hover:text-white/80'}`}
+                          >
+                            Manual Entry
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowInstructions(!showInstructions);
+                            }}
+                            className="w-6 h-6 rounded-full bg-black/60 border border-edc-blue/50 flex items-center justify-center text-edc-blue font-bold hover:bg-black/80 hover:border-edc-blue transition-colors help-button relative z-10"
+                          >
+                            ?
+                          </button>
+                          
+                          {/* Instructions popup that shows only when clicked */}
+                          {showInstructions && (
+                            <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 w-72 p-3 bg-black/95 border border-edc-purple/50 rounded-md z-20 shadow-lg instructions-popup">
+                              <p className="text-edc-blue/90 text-sm mb-2 font-medium">How to use:</p>
+                              
+                              <div className="mb-2.5 pb-2 border-b border-edc-purple/20">
+                                <p className="text-edc-pink/90 text-xs font-medium mb-1">Photo Upload Mode:</p>
+                                <ol className="text-xs text-white/80 list-decimal list-inside ml-1 space-y-0">
+                                  <li>Screenshot your festival schedule</li>
+                                  <li>Upload image using the button below</li>
+                                  <li>Verify extracted sets are correct</li>
+                                </ol>
+                              </div>
+                              
+                              <div>
+                                <p className="text-edc-blue/90 text-xs font-medium mb-1">Manual Entry Mode:</p>
+                                <ol className="text-xs text-white/80 list-decimal list-inside ml-1 space-y-0">
+                                  <li>Switch to manual mode</li>
+                                  <li>Enter artist, stage, and time info</li>
+                                  <li>Add each set to your schedule</li>
+                                </ol>
+                              </div>
+                            </div>
+                          )}
+                              <li>Enter artist, stage, and time info</li>
+                              <li>Add each set to your schedule</li>
+                            </ol>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Schedule uploader */}
+                <div className="text-center">
+                  <FestivalScheduleUploader 
+                    onSetsExtracted={handleSetsExtracted} 
+                    toggleButtonRef={toggleModeRef}
+                    onToggleMode={(mode) => setIsManualMode(mode)}
+                  />
+                </div>
+              </div>
+              
+              <button
+                onClick={handleAddSchedule}
+                disabled={currentSchedule.sets.length === 0}
+                className={`w-full py-3 rounded-md text-white font-medium transition-all ${currentSchedule.sets.length > 0 
+                  ? 'bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20' 
+                  : 'bg-gray-700 cursor-not-allowed opacity-50'}`}
+              >
+                {currentSchedule.sets.length > 0 ? 'Add Schedule' : 'Upload Schedule First'}
+              </button>
+            </div>
+            
+            {/* Schedule list display */}
+            {schedules.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-lg font-medium text-edc-blue/90 mb-2">All Schedules</h3>
+                <ul className="space-y-2">
+                  {schedules.map((schedule, idx) => (
+                    <li key={idx} className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple schedule-item">
+                      <div className="flex justify-between items-center">
+                        {editingScheduleIndex === idx ? (
+                          <div className="flex items-center">
+                            <input
+                              type="text"
+                              value={editingScheduleName}
+                              onChange={(e) => setEditingScheduleName(e.target.value)}
+                              className="bg-black/60 border border-edc-purple rounded-md py-1 px-2 text-white text-sm focus:border-edc-pink focus:outline-none focus:ring-1 focus:ring-edc-pink/30 transition-all"
+                              placeholder={`Schedule ${idx + 1}`}
+                              autoFocus
+                            />
+                            <button
+                              onClick={saveScheduleName}
+                              className="ml-2 text-green-400 hover:text-green-300 text-sm"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={cancelEditingScheduleName}
+                              className="ml-2 text-gray-400 hover:text-gray-300 text-sm"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center">
+                            <span className="text-edc-pink font-bold">{schedule.name}</span>
+                            <button
+                              onClick={() => startEditingScheduleName(idx)}
+                              className="ml-2 opacity-30 hover:opacity-100 transition-opacity text-white text-xs"
+                              title="Edit Name"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex space-x-2">
+                          <span className="text-edc-purple text-sm">{schedule.sets.length} sets</span>
+                          <button
+                            onClick={() => removeSchedule(idx)}
+                            className="text-red-400 hover:text-red-300 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {schedule.sets.length > 0 && (
+                        <div className="mt-2">
+                          <div className="flex flex-col space-y-1">
+                            {/* Always show first 3 sets */}
+                            {schedule.sets.slice(0, 3).map((set, setIdx) => (
+                              <div key={setIdx} className="grid grid-cols-3 gap-2 text-sm py-1 px-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30">
+                                <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                                <div className="text-white">{formatTime(set.start)}</div>
+                                <div className="text-edc-blue truncate">{set.stage}</div>
+                              </div>
+                            ))}
+                            
+                            {/* Show expansion button if there are more than 3 sets */}
+                            {schedule.sets.length > 3 && !expandedSchedules[idx] && (
+                              <div className="mt-2">
+                                <button 
+                                  onClick={() => toggleScheduleExpanded(idx)}
+                                  className="text-sm text-edc-blue hover:text-edc-pink px-2 py-1 rounded-md border border-edc-blue/30 hover:border-edc-pink/50 transition-colors"
+                                >
+                                  Show {schedule.sets.length - 3} more sets
+                                </button>
+                              </div>
+                            )}
+                            
+                            {/* Show the rest of the sets if expanded */}
+                            {expandedSchedules[idx] && (
+                              <>
+                                {schedule.sets.slice(3).map((set, setIdx) => (
+                                  <div key={setIdx + 3} className="grid grid-cols-3 gap-2 text-sm py-1 px-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30">
+                                    <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                                    <div className="text-white">{formatTime(set.start)}</div>
+                                    <div className="text-edc-blue truncate">{set.stage}</div>
+                                  </div>
+                                ))}
+                                
+                                <div className="mt-2">
+                                  <button 
+                                    onClick={() => toggleScheduleExpanded(idx)}
+                                    className="text-sm text-edc-blue hover:text-edc-pink px-2 py-1 rounded-md border border-edc-blue/30 hover:border-edc-pink/50 transition-colors"
+                                  >
+                                    Hide sets
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            <div className="mt-4"></div>
+            
+              {schedules.length > 0 && (
+                <button
+                  onClick={findMeetupGaps}
+                  disabled={schedules.length < 2}
+                  className={`w-full py-3 rounded-md text-white font-medium transition-all ${schedules.length >= 2 
+                    ? 'bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 transition-opacity animate-glow' 
+                    : 'bg-gray-700 cursor-not-allowed opacity-50'}`}
+                >
+                  Find Meetup Times
+                </button>
+              )}
+            </div>
+            {/* Tip Jar removed from here and moved to appear on all pages */}
+          </div>
+        )}
+        
+        {/* Meetup Gaps Page */}
+        {currentPage === 'meetupGaps' && meetupGaps.length > 0 && (
+          <div id="meetup-results" className="w-full bg-black bg-opacity-70 backdrop-blur-sm p-6 rounded-lg border border-edc-pink shadow-lg shadow-edc-pink/20">
+            {/* Back button */}
+            <button 
+              onClick={() => navigateBack('main')}
+              className="mb-4 px-4 py-2 bg-black/60 text-white/80 border border-edc-purple/30 rounded-md hover:bg-black/80 hover:text-white hover:border-edc-purple/80 transition-all flex items-center"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to Schedules
+            </button>
+            <h2 className="text-xl font-medium text-edc-blue/90 mb-2">Potential Meetup Gaps</h2>
+            <p className="text-xs text-edc-purple/80 mb-4 tracking-wide">Select the time gaps you're interested in:</p>
+            
+            <div className="space-y-3 mb-6">
+              {meetupGaps.map((gap, idx) => (
+                <div 
+                  key={idx}
+                  className={`p-4 rounded-md border cursor-pointer transition-all ${
+                    gap.isRecommended 
+                      ? selectedGaps[idx]
+                        ? 'border-edc-pink bg-gradient-to-br from-green-900/20 to-black/90'
+                        : 'border-green-500/70 bg-green-900/5 hover:bg-green-900/10'
+                      : selectedGaps[idx]
+                        ? 'border-edc-pink bg-edc-purple/5'
+                        : 'border-gray-500/50 bg-black/70 hover:bg-black/80'
+                  }`}
+                  onClick={() => toggleGapSelection(idx)}
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-bold text-edc-pink flex">
+                        <span className="whitespace-nowrap">{formatTime(gap.start)} - {formatTime(gap.end)}</span>
+                        <span className="ml-2 text-white text-sm font-normal whitespace-nowrap">({formatDuration(gap.start, gap.end)})</span>
+                      </p>
+                      
+                      {gap.beforeCommonArtist && (
+                        <p className="text-green-400 text-sm flex items-center">
+                          {gap.isRecommended && <span className="mr-1">✓</span>}
+                          <span>Before {gap.beforeCommonArtist} @ {gap.beforeStage}</span>
+                        </p>
+                      )}
+                    </div>
+                    
+                    <div className="flex items-center">
+                      {selectedGaps[idx] && (
+                        <span className="bg-edc-pink text-black text-xs font-bold px-2 py-1 rounded-full mr-2">
+                          Selected
+                        </span>
+                      )}
+                      <div className={`w-5 h-5 rounded-full border-2 ${
+                        selectedGaps[idx] 
+                          ? 'border-edc-pink bg-edc-pink' 
+                          : 'border-white'
+                      }`}>
+                        {selectedGaps[idx] && (
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-black" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 text-sm">
+                    <p className="text-edc-blue">Available for: 
+                      <span className="text-white ml-1">
+                        {gap.commonSchedules ? gap.commonSchedules.join(', ') : gap.schedules.join(', ')}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="flex justify-between items-center">
+              <p className="text-edc-purple text-sm">
+                <span className="inline-block w-3 h-3 bg-green-500 rounded-full mr-1"></span> Recommended gaps before common sets
+              </p>
+              
+              <p className="text-xs text-white">
+                {Object.keys(selectedGaps).length} of {meetupGaps.length} selected
+              </p>
+            </div>
+            
+            <div className="mt-4 flex justify-center">
+              <button
+                onClick={generateMeetups}
+                disabled={Object.keys(selectedGaps).length === 0}
+                className={`px-8 py-3 rounded-md text-white font-medium ${
+                  Object.keys(selectedGaps).length > 0
+                    ? 'bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90'
+                    : 'bg-gray-700 cursor-not-allowed opacity-50'
+                }`}
+              >
+                Generate Meetup Plan
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Meetup Plan Page */}
+        {currentPage === 'meetupPlan' && meetupPlan.length > 0 && (
+          <div id="meetup-plan" className="w-full bg-black bg-opacity-70 backdrop-blur-sm p-6 rounded-lg">
+            <div ref={meetupPlanRef}>
+              {/* Custom header has been removed to make a cleaner image */}
+            {/* Back button */}
+            <button 
+              onClick={() => navigateBack('meetupGaps')}
+              className="mb-4 px-4 py-2 bg-black/50 text-white/70 border border-edc-purple/30 rounded-md hover:bg-black/70 hover:text-white/90 hover:border-edc-purple/50 transition-all flex items-center text-sm"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Back to Meetup Gaps
+            </button>
+            <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">Your Meetup Plan</h2>
+            <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+            
+            <div className="space-y-6">
+              {meetupPlan.map((meetup, idx) => (
+                <div 
+                  key={meetup.id || idx}
+                  className={`flex flex-col border-l-2 px-1 py-2 my-1 rounded-r-md ${meetup.isRecommended ? 'border-green-500/60 bg-green-900/5' : 'border-edc-purple/60 bg-edc-purple/5'}`}
+                >
+                  <div className="flex justify-between items-center pl-4">
+                    <h3 className="text-edc-blue/90 font-medium text-lg">{`#${idx + 1}: Before ${meetup.beforeCommonArtist || 'Next Artist'} @ ${meetup.beforeStage || 'Unknown Stage'}`}</h3>
+                  </div>
+                  
+                  <div className="flex items-center pl-4 mt-1">
+                    <p className="text-edc-purple/90">
+                      {formatTime(meetup.start)} - {formatTime(meetup.end)}
+                      <span className="text-white/70 text-xs ml-2">({formatDuration(meetup.start, meetup.end)})</span>
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-start pl-4 mt-1">
+                    <span className="text-edc-purple text-xs">
+                      {meetup.schedules.join(', ')}
+                    </span>
+                  </div>
+                  
+                  {/* Location section - editable */}
+                  <div className="flex items-center pl-4 mt-2">
+                    {editingLocationIndex === idx ? (
+                      <div className="flex items-center w-full pr-4">
+                        <input 
+                          type="text" 
+                          value={editingLocation}
+                          onChange={(e) => setEditingLocation(e.target.value)}
+                          placeholder="Enter meetup spot..."
+                          className="bg-black/30 border border-edc-purple/30 text-white/90 text-sm rounded px-2 py-1 w-full"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveLocation();
+                            } else if (e.key === 'Escape') {
+                              cancelEditingLocation();
+                            }
+                          }}
+                        />
+                        <div className="flex ml-2">
+                          <button 
+                            onClick={saveLocation}
+                            className="text-green-400/90 hover:text-green-400 mr-1"
+                            title="Save location"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button 
+                            onClick={cancelEditingLocation}
+                            className="text-red-400/90 hover:text-red-400"
+                            title="Cancel"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center w-full text-sm">
+                        {meetup.customLocation ? (
+                          <>
+                            <span className="text-edc-pink text-xs mr-2">📍</span>
+                            <span className="text-edc-pink text-xs">{meetup.customLocation}</span>
+                          </>
+                        ) : (
+                          <span className="text-edc-pink/50 text-xs italic cursor-pointer hover:text-edc-pink/80" onClick={() => startEditingLocation(idx)}>
+                            + Add meetup spot
+                          </span>
+                        )}
+                        {meetup.customLocation && (
+                          <button 
+                            onClick={() => startEditingLocation(idx)}
+                            className="ml-2 text-edc-pink/50 hover:text-edc-pink/80"
+                            title="Edit location"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Footer removed for cleaner screenshot */}
+            </div>
+            
+            </div>
+            
+            {/* Action buttons */}
+            <div className="mt-6 flex justify-center space-x-4">
+              <button 
+                id="save-image-button"
+                onClick={saveMeetupPlanAsImage}
+                className="px-4 py-2 bg-edc-blue/30 text-white/90 rounded-md hover:bg-edc-blue/50 transition-all duration-200 flex items-center text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16v-4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6" />
+                </svg>
+                Save as Image
+              </button>
+              
+              <button 
+                onClick={resetApp}
+                className="px-4 py-2 bg-red-900/40 text-white/90 rounded-md hover:bg-red-700/60 transition-all duration-200 flex items-center text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Footer section with Tip Jar and About Me */}
+        <div className="text-center mt-6 mb-4 border-t border-edc-purple/10 pt-4">
+          <VenmoTipJar />
+          
+          <div className="-mt-1 opacity-70 hover:opacity-100 transition-opacity">
+            <a 
+              href="https://linktr.ee/mushiewaffle" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-[10px] text-white/70 hover:text-edc-pink/90 transition-colors"
+            >
+              About
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

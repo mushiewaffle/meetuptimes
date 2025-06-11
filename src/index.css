@@ -1,0 +1,134 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Reset default margin/padding to ensure full viewport coverage */
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow-x: hidden;
+  background-color: #000;
+}
+
+@layer utilities {
+  .animate-glow {
+    animation: glow 2s infinite alternate;
+  }
+  
+  .animate-fadeIn {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  
+  @keyframes glow {
+    from {
+      box-shadow: 0 0 5px rgba(255, 0, 255, 0.3);
+    }
+    to {
+      box-shadow: 0 0 15px rgba(255, 0, 255, 0.7);
+    }
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+:root {
+  --edc-black: #111111;
+  --edc-blue: #2dd4ff;
+  --edc-pink: #ff36de;
+  --edc-purple: #9966ff;
+}
+
+.bg-edc-black {
+  background-color: var(--edc-black);
+}
+
+.text-edc-blue {
+  color: var(--edc-blue);
+}
+
+.text-edc-pink {
+  color: var(--edc-pink);
+}
+
+.text-edc-purple {
+  color: var(--edc-purple);
+}
+
+.border-edc-blue {
+  border-color: var(--edc-blue);
+}
+
+.border-edc-pink {
+  border-color: var(--edc-pink);
+}
+
+.border-edc-purple {
+  border-color: var(--edc-purple);
+}
+
+.from-edc-blue {
+  --tw-gradient-from: var(--edc-blue);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(45, 212, 255, 0));
+}
+
+.from-edc-pink {
+  --tw-gradient-from: var(--edc-pink);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(255, 54, 222, 0));
+}
+
+.from-edc-purple {
+  --tw-gradient-from: var(--edc-purple);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(153, 102, 255, 0));
+}
+
+.to-edc-blue {
+  --tw-gradient-to: var(--edc-blue);
+}
+
+.to-edc-pink {
+  --tw-gradient-to: var(--edc-pink);
+}
+
+.to-edc-purple {
+  --tw-gradient-to: var(--edc-purple);
+}
+
+.bg-festival-pattern {
+  background-image: url('/festival-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+@media print {
+  .bg-festival-pattern {
+    background-image: none;
+    background-color: white;
+  }
+  
+  #meetup-plan {
+    background-color: white !important;
+    color: black !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  
+  #meetup-plan * {
+    color: black !important;
+  }
+  
+  button {
+    display: none !important;
+  }
+}

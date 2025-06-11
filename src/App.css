@@ -1,0 +1,132 @@
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+/* Screenshot styling */
+.screenshot-mode {
+  background-color: #121212 !important;
+  padding: 20px !important;
+  border-radius: 12px !important;
+  border: 1px solid rgba(138, 43, 226, 0.2) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
+}
+
+.screenshot-mode h2 {
+  margin-bottom: 0.25rem !important;
+  color: rgba(255, 105, 180, 0.9) !important;
+  font-size: 1.75rem !important;
+  text-align: center !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+}
+
+.screenshot-mode button,
+.screenshot-mode .hide-in-screenshot {
+  display: none !important;
+}
+
+.screenshot-mode .meetup-card {
+  margin-bottom: 16px !important;
+  background-color: rgba(20, 20, 20, 0.7) !important;
+  border-radius: 8px !important;
+}
+
+.screenshot-header {
+  display: none;
+}
+
+.screenshot-mode .screenshot-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-bottom: 1.5rem !important;
+  padding-bottom: 0.75rem !important;
+  border-bottom: 1px solid rgba(138, 43, 226, 0.2) !important;
+}
+
+.screenshot-mode .screenshot-header .app-logo {
+  height: 40px !important;
+  width: auto !important;
+  margin-right: 12px !important;
+}
+
+.screenshot-mode .screenshot-header .header-text {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.screenshot-mode .screenshot-header .app-title {
+  font-size: 1.25rem !important;
+  font-weight: bold !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  letter-spacing: 1px !important;
+}
+
+.screenshot-mode .screenshot-header .app-subtitle {
+  font-size: 0.75rem !important;
+  color: rgba(255, 105, 180, 0.8) !important;
+  margin-top: -2px !important;
+}
+
+/* Screenshot footer styling */
+.screenshot-footer {
+  display: none; /* Hidden by default in the app */
+}
+
+.screenshot-mode .screenshot-footer {
+  display: block !important; /* Visible in screenshots */
+  margin-top: 1.5rem !important;
+  padding-top: 0.75rem !important;
+  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+  color: rgba(138, 43, 226, 0.7) !important;
+  font-size: 0.75rem !important;
+  text-align: center !important;
+}
+
+.screenshot-mode .screenshot-footer {
+  display: flex !important;
+  justify-content: center !important;
+  margin-top: 1rem !important;
+  font-size: 0.7rem !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
