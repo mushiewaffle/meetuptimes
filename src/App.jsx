@@ -893,7 +893,27 @@ function App() {
                                 <li>Select meetup times & create plan</li>
                                 <li>Add meetup spots & share plan</li>
                               </ol>
-                              <p className="text-xs text-edc-pink/90 italic">TIP: Make sure your screenshots show the time, artist, and stage clearly.</p>
+                              <p className="text-xs text-edc-pink/90 italic mb-4">
+                                TIP: Make sure your screenshots show the time, artist, and stage clearly.
+                              </p>
+                              <p className="text-edc-blue/90 text-sm font-medium mb-2">
+                                Video Walkthrough
+                              </p>
+                              <div className="mt-2 pointer-events-auto">
+                              <video
+                                className="w-full rounded-md object-cover"
+                                style={{ aspectRatio: '9/16' }}
+                                controls
+                                preload="metadata"
+                                poster="/icons/demo_video/thumbnail.png"
+                              >
+                                <source
+                                  src="/icons/demo_video/planner_app_demo.mp4"
+                                  type="video/mp4"
+                                />
+                                Your browser doesn’t support HTML5 video.
+                              </video>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1087,7 +1107,27 @@ function App() {
                       <li>Select meetup times & create plan</li>
                       <li>Add meetup spots & share plan</li>
                     </ol>
-                    <p className="text-xs text-edc-pink/90 italic">TIP: Make sure your screenshots show the time, artist, and stage clearly.</p>
+                    <p className="text-xs text-edc-pink/90 italic mb-4">
+                      TIP: Make sure your screenshots show the time, artist, and stage clearly.
+                    </p>
+                    <p className="text-edc-blue/90 text-sm font-medium mb-2">
+                      Video Walkthrough
+                    </p>
+                    <div className="mt-2 pointer-events-auto">
+                    <video
+                      className="w-full rounded-md object-cover"
+                      style={{ aspectRatio: '9/16' }}
+                      controls
+                      preload="metadata"
+                      poster="/icons/demo_video/thumbnail.png"
+                    >
+                      <source
+                        src="/icons/demo_video/planner_app_demo.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser doesn’t support HTML5 video.
+                    </video>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1220,7 +1260,27 @@ function App() {
                       <li>Select meetup times & create plan</li>
                       <li>Add meetup spots & share plan</li>
                     </ol>
-                    <p className="text-xs text-edc-pink/90 italic">TIP: Make sure your screenshots show the time, artist, and stage clearly.</p>
+                    <p className="text-xs text-edc-pink/90 italic mb-4">
+                      TIP: Make sure your screenshots show the time, artist, and stage clearly.
+                    </p>
+                    <p className="text-edc-blue/90 text-sm font-medium mb-2">
+                      Video Walkthrough
+                    </p>
+                    <div className="mt-2 pointer-events-auto">
+                    <video
+                      className="w-full rounded-md object-cover"
+                      style={{ aspectRatio: '9/16' }}
+                      controls
+                      preload="metadata"
+                      poster="/icons/demo_video/thumbnail.png"
+                    >
+                      <source
+                        src="/icons/demo_video/planner_app_demo.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser doesn’t support HTML5 video.
+                    </video>
+                    </div>
                   </div>
                 )}
               </div>
