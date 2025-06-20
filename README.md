@@ -1,4 +1,4 @@
-# Festival Meetup App
+# Festival Meetup Times Planner
 
 A neon-themed single-page web application that helps up to 5 friends at a music festival coordinate meetup times during overlapping downtime between their preferred artist set schedules.
 
@@ -80,6 +80,7 @@ The app includes a Service Worker that caches all assets, making it fully functi
 ## Algorithm
 
 The app uses an interval intersection algorithm to:
+
 1. Convert set schedules to time intervals
 2. Identify gaps between sets for each friend
 3. Find intersections of downtime across friends
@@ -89,6 +90,7 @@ The app uses an interval intersection algorithm to:
 ## Design
 
 The UI features a festival-inspired neon aesthetic with:
+
 - Vibrant pink (#FF00FF), blue (#00FFFF), and purple (#8000FF) colors
 - Black background with subtle gradient effects
 - Glow effects on buttons and text
