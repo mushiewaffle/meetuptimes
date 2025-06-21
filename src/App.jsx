@@ -905,10 +905,10 @@ function App() {
                                 style={{ aspectRatio: '9/16' }}
                                 controls
                                 preload="metadata"
-                                poster="/public/demo_video/thumbnail.png"
+                                poster="/demo_video/thumbnail.png"
                               >
                                 <source
-                                  src="/public/demo_video/planner_app_demo.mp4"
+                                  src="/demo_video/planner_app_demo.mp4"
                                   type="video/mp4"
                                 />
                                 Your browser doesn’t support HTML5 video.
@@ -1119,10 +1119,10 @@ function App() {
                       style={{ aspectRatio: '9/16' }}
                       controls
                       preload="metadata"
-                      poster="/public/demo_video/thumbnail.png"
+                      poster="/demo_video/thumbnail.png"
                     >
                       <source
-                        src="/public/demo_video/planner_app_demo.mp4"
+                        src="/demo_video/planner_app_demo.mp4"
                         type="video/mp4"
                       />
                       Your browser doesn’t support HTML5 video.
@@ -1272,10 +1272,10 @@ function App() {
                       style={{ aspectRatio: '9/16' }}
                       controls
                       preload="metadata"
-                      poster="/public/demo_video/thumbnail.png"
+                      poster="/demo_video/thumbnail.png"
                     >
                       <source
-                        src="/public/demo_video/planner_app_demo.mp4"
+                        src="/demo_video/planner_app_demo.mp4"
                         type="video/mp4"
                       />
                       Your browser doesn’t support HTML5 video.
