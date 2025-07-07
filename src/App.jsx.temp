@@ -1,0 +1,507 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { parseISO, format } from 'date-fns';
+import html2canvas from 'html2canvas';
+import './App.css';
+
+// Components
+import FestivalScheduleUploader from './components/FestivalScheduleUploader';
+import VenmoTipJar from './components/VenmoTipJar';
+import deduplicateSets from './utils/deduplicateSets';
+import findSharedGaps from './utils/findSharedGaps';
+
+// Add Capacitor imports for native filesystem support
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+
+/**
+ * Festival Meetup Times Planner App
+ */
+function App() {
+  // Page navigation state - controls which page is currently shown
+  // Values: 'main', 'meetupGaps', 'meetupPlan'
+  const [currentPage, setCurrentPage] = useState('main');
+  
+  // State for storing schedules
+  const [schedules, setSchedules] = useState([]);
+  
+  // State for meetup time gaps
+  const [meetupGaps, setMeetupGaps] = useState([]);
+  
+  // State for selected meetup gaps
+  const [selectedGaps, setSelectedGaps] = useState({});
+  
+  // State for finalized meetup plan
+  const [meetupPlan, setMeetupPlan] = useState([]);
+  
+  // State for tracking which meetup's location is being edited
+  const [editingLocationIndex, setEditingLocationIndex] = useState(null);
+  const [editingLocation, setEditingLocation] = useState('');
+  
+  // Current schedule being edited
+  const [currentSchedule, setCurrentSchedule] = useState({
+    name: '',
+    sets: []
+  });
+  
+  // Counter for naming schedules
+  const [scheduleCounter, setScheduleCounter] = useState(1);
+  
+  // Show/hide instructions
+  const [showInstructions, setShowInstructions] = useState(false);
+  
+  // Toggle reference for manual/upload mode
+  const toggleModeRef = useRef(null);
+  // Default to image upload mode (not manual)
+  const [isManualMode, setIsManualMode] = useState(false);
+  
+  // Handle clicking outside the instructions popup
+  useEffect(() => {
+    if (showInstructions) {
+      const handleClickOutside = (event) => {
+        if (event.target.closest('.instructions-popup') === null && 
+            !event.target.closest('.help-button')) {
+          setShowInstructions(false);
+        }
+      };
+      
+      const handleEscape = (event) => {
+        if (event.key === 'Escape') {
+          setShowInstructions(false);
+        }
+      };
+      
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+      
+      return () => {
+        document.removeEventListener('click', handleClickOutside);
+        document.removeEventListener('keydown', handleEscape);
+      };
+    }
+  }, [showInstructions]);
+  
+  // Track which schedules are expanded
+  const [expandedSchedules, setExpandedSchedules] = useState({});
+  
+  // Form validation errors
+  const [formErrors, setFormErrors] = useState({});
+  
+  // Refs for edit forms to handle click-away
+  const editSetFormRef = useRef(null);
+  const addSetFormRef = useRef(null);
+  
+  // Track which schedule is being edited (for name editing)
+  const [editingScheduleIndex, setEditingScheduleIndex] = useState(null);
+  const [editingScheduleName, setEditingScheduleName] = useState('');
+  
+  // State for editing sets within schedules
+  const [editingSetInfo, setEditingSetInfo] = useState(null); // { scheduleIndex, setIndex, set }
+  const [isAddingSetToSchedule, setIsAddingSetToSchedule] = useState(null); // scheduleIndex
+  
+  // Animation properties for fade-in transitions
+  // (Animation handled through CSS classes instead)
+  
+  // Load saved data on initial render
+  useEffect(() => {
+    try {
+      const savedSchedules = localStorage.getItem('festivalSchedules');
+      const savedMeetups = localStorage.getItem('festivalMeetups');
+      
+      if (savedSchedules) {
+        const parsedSchedules = JSON.parse(savedSchedules);
+        setSchedules(parsedSchedules);
+        
+        if (parsedSchedules.length > 0) {
+          setScheduleCounter(parsedSchedules.length + 1);
+        }
+      }
+      
+      if (savedMeetups) {
+        const parsedMeetups = JSON.parse(savedMeetups);
+        setSelectedGaps(parsedMeetups.selectedGaps || {});
+        setMeetupPlan(parsedMeetups.meetupPlan || []);
+      }
+    } catch (error) {
+      console.error('Error loading from localStorage:', error);
+    }
+  }, []);
+  
+  // Listen for AI Parser direct schedule creation events
+  useEffect(() => {
+    const handleAddScheduleFromAI = (event) => {
+      try {
+        const { sets } = event.detail;
+        
+        if (!sets || sets.length === 0) {
+          console.error('No sets provided from AI parser');
+          return;
+        }
+        
+        // Use default name (no AI indicator as requested)
+        const scheduleName = `Schedule ${scheduleCounter}`;
+        
+        // Add the schedule directly
+        setSchedules([...schedules, { name: scheduleName, sets }]);
+        
+        // Update counter
+        setScheduleCounter(scheduleCounter + 1);
+        
+        // Reset any found gaps as they're now outdated
+        setMeetupGaps([]);
+        setMeetupPlan([]);
+        
+        console.log(`Added schedule from AI parser: ${scheduleName} with ${sets.length} sets`);
+      } catch (error) {
+        console.error('Error handling AI schedule creation:', error);
+      }
+    };
+    
+    // Add event listener
+    document.addEventListener('addScheduleFromAI', handleAddScheduleFromAI);
+    
+    // Clean up
+    return () => {
+      document.removeEventListener('addScheduleFromAI', handleAddScheduleFromAI);
+    };
+  }, [schedules, scheduleCounter]);
+  
+  // Save data when it changes
+  useEffect(() => {
+    try {
+      if (schedules.length > 0) {
+        localStorage.setItem('festivalSchedules', JSON.stringify(schedules));
+      }
+      
+      if (Object.keys(selectedGaps).length > 0 || meetupPlan.length > 0) {
+        localStorage.setItem('festivalMeetups', JSON.stringify({ 
+          selectedGaps,
+          meetupPlan 
+        }));
+      }
+    } catch (error) {
+      console.error('Error saving to localStorage:', error);
+    }
+  }, [schedules, selectedGaps, meetupPlan]);
+  
+  // Handle click-away to cancel editing
+  useEffect(() => {
+    function handleClickOutside(event) {
+      // Ignore clicks on toggle schedule expanded buttons
+      if (event.target.closest('[data-action="toggle-schedule-expanded"]')) {
+        return;
+      }
+      
+      // For editing existing sets
+      if (editingSetInfo && editSetFormRef.current && !editSetFormRef.current.contains(event.target)) {
+        setEditingSetInfo(null);
+        setFormErrors({});
+      }
+      
+      // For adding new sets
+      if (isAddingSetToSchedule !== null && addSetFormRef.current && !addSetFormRef.current.contains(event.target)) {
+        // Check if clicked on any add set button
+        const clickedOnAddButton = event.target.closest('[data-add-set-button]');
+        if (!clickedOnAddButton) {
+          setIsAddingSetToSchedule(null);
+          setFormErrors({});
+        }
+      }
+    }
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingSetInfo, isAddingSetToSchedule]);
+  
+  /**
+   * Handle adding a new schedule from extracted sets
+   */
+  const handleAddSchedule = () => {
+    try {
+      // Validate sets exist
+      if (!currentSchedule.sets || currentSchedule.sets.length === 0) {
+        // Instead of showing an alert, let's create an empty schedule
+        createEmptySchedule();
+        return;
+      }
+      
+      // Use default name if not provided
+      const scheduleName = currentSchedule.name.trim() || `Schedule ${scheduleCounter}`;
+      
+      // Create deep copy of sets
+      const setsCopy = JSON.parse(JSON.stringify(currentSchedule.sets));
+      
+      // Add the schedule
+      setSchedules([...schedules, { name: scheduleName, sets: setsCopy }]);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset current schedule
+      setCurrentSchedule({ name: '', sets: [] });
+      
+      // Clear the uploader
+      document.dispatchEvent(new CustomEvent('clearUploader'));
+      
+      // Reset any found gaps as they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Reset to main page if we were on another page
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
+      }
+      
+      console.log(`Added schedule: ${scheduleName}`);
+    } catch (error) {
+      console.error('Error adding schedule:', error);
+    }
+  };
+  
+  /**
+   * Create an empty schedule for manual set entry
+   */
+  const createEmptySchedule = () => {
+    try {
+      // Generate a new default name
+      const scheduleName = `Schedule ${scheduleCounter}`;
+      
+      // Add the empty schedule
+      const newSchedules = [...schedules, { name: scheduleName, sets: [] }];
+      setSchedules(newSchedules);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset gaps and plans since they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Auto-expand the new schedule so user can see it
+      setExpandedSchedules(prev => ({
+        ...prev,
+        [newSchedules.length - 1]: true
+      }));
+      
+      // Start adding a set to the new schedule
+      setIsAddingSetToSchedule(newSchedules.length - 1);
+      
+      console.log(`Added empty schedule: ${scheduleName}`);
+    } catch (error) {
+      console.error('Error creating empty schedule:', error);
+    }
+  };
+
+  /**
+   * Remove a schedule by index
+{{ ... }}
+        
+        {/* Meetup Plan Page */}
+        {currentPage === 'meetupPlan' && meetupPlan.length > 0 && (
+          <div id="meetup-plan" className="w-full bg-black bg-opacity-70 backdrop-blur-sm p-6 rounded-lg">
+            <div ref={meetupPlanRef}>
+              {/* Main page with schedules and extracted sets */}
+          <div className="w-full max-w-4xl mx-auto">
+            {/* Top action buttons */}
+            <div className="flex justify-between items-center mb-3">
+              {/* Create new schedule button */}
+              <button
+                onClick={createEmptySchedule}
+                className="px-3 py-1.5 bg-edc-blue/20 hover:bg-edc-blue/30 text-white text-xs rounded-sm flex items-center transition-colors"
+                title="Create a new empty schedule"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add a Schedule
+              </button>
+                  }}
+                  className="w-6 h-6 rounded-full bg-black/60 border border-edc-blue/50 flex items-center justify-center text-edc-blue font-bold hover:bg-black/80 hover:border-edc-blue transition-colors help-button"
+                >
+                  ?
+                </button>
+                {showInstructions && (
+                  <div className="absolute md:left-full top-0 md:ml-2 md:top-0 top-full right-0 md:right-auto mt-2 md:mt-0 w-72 p-3 bg-black/95 border border-edc-purple/50 rounded-md z-10 shadow-lg instructions-popup">
+                    <p className="text-edc-blue/90 text-sm mb-2 font-medium">How to use:</p>
+                    <ol className="text-xs text-white/80 list-decimal list-inside space-y-1 mb-2">
+                      <li>Upload screenshots or add sets manually</li>
+                      <li>Verify sets and Add Schedule</li>
+                      <li>Repeat for all friends' schedules</li>
+                      <li>Generate meetup times</li>
+                      <li>Select meetup times & create plan</li>
+                      <li>Add meetup spots & share plan</li>
+                    </ol>
+                    <p className="text-xs text-edc-pink/90 italic mb-4">
+                      TIP: Make sure your screenshots show the time, artist, and stage clearly.
+                    </p>
+                    <p className="text-edc-blue/90 text-sm font-medium mb-2">
+                      Video Walkthrough
+                    </p>
+                    <div className="mt-2 pointer-events-auto">
+                    <video
+                      className="w-full rounded-md object-cover"
+                      style={{ aspectRatio: '9/16' }}
+                      controls
+                      preload="metadata"
+                      poster="/demo_video/thumbnail.png"
+                    >
+                      <source
+                        src="/demo_video/planner_app_demo.mp4"
+                        type="video/mp4"
+                      />
+                      Your browser doesn’t support HTML5 video.
+                    </video>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">Your Meetup Plan</h2>
+            <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+            
+            <div className="space-y-6">
+              {meetupPlan.map((meetup, idx) => (
+                <div 
+                  key={meetup.id || idx}
+                  className={`flex flex-col border-l-2 px-1 py-2 my-1 rounded-r-md ${meetup.isRecommended ? 'border-green-500/60 bg-green-900/5' : 'border-edc-purple/60 bg-edc-purple/5'}`}
+                >
+                  <div className="flex justify-between items-center pl-4">
+                    <h3 className="text-edc-blue/90 font-medium text-lg">{`#${idx + 1}: Before ${meetup.beforeCommonArtist || 'Next Artist'} @ ${meetup.beforeStage || 'Unknown Stage'}`}</h3>
+                  </div>
+                  
+                  <div className="flex items-center pl-4 mt-1">
+                    <p className="text-edc-purple/90">
+                      {formatTime(meetup.start)} - {formatTime(meetup.end)}
+                      <span className="text-white/70 text-xs ml-2">({formatDuration(meetup.start, meetup.end)})</span>
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-start pl-4 mt-1">
+                    <span className="text-edc-purple text-xs">
+                      {meetup.schedules.join(', ')}
+                    </span>
+                  </div>
+                  
+                  {/* Location section - editable */}
+                  <div className="flex items-center pl-4 mt-2">
+                    {editingLocationIndex === idx ? (
+                      <div className="flex items-center w-full pr-4">
+                        <input 
+                          type="text" 
+                          value={editingLocation}
+                          onChange={(e) => setEditingLocation(e.target.value)}
+                          placeholder="Enter meetup spot..."
+                          className="bg-black/30 border border-edc-purple/30 text-white/90 text-sm rounded px-2 py-1 w-full"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              saveLocation();
+                            } else if (e.key === 'Escape') {
+                              cancelEditingLocation();
+                            }
+                          }}
+                        />
+                        <div className="flex ml-2">
+                          <button 
+                            onClick={saveLocation}
+                            className="text-green-400/90 hover:text-green-400 mr-1"
+                            title="Save location"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button 
+                            onClick={cancelEditingLocation}
+                            className="text-red-400/90 hover:text-red-400"
+                            title="Cancel"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center w-full text-sm">
+                        {meetup.customLocation ? (
+                          <>
+                            <span className="text-edc-pink text-xs mr-2">📍</span>
+                            <span className="text-edc-pink text-xs">{meetup.customLocation}</span>
+                          </>
+                        ) : (
+                          <span className="text-edc-pink/50 text-xs italic cursor-pointer hover:text-edc-pink/80" onClick={() => startEditingLocation(idx)}>
+                            + Add meetup spot
+                          </span>
+                        )}
+                        {meetup.customLocation && (
+                          <button 
+                            onClick={() => startEditingLocation(idx)}
+                            className="ml-2 text-edc-pink/50 hover:text-edc-pink/80"
+                            title="Edit location"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        )}
+
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {/* Footer removed for cleaner screenshot */}
+            </div>
+            
+            </div>
+            
+            {/* Action buttons */}
+            <div className="mt-6 flex justify-center space-x-4">
+              <button 
+                id="save-image-button"
+                onClick={saveMeetupPlanAsImage}
+                className="px-4 py-2 bg-edc-blue/30 text-white/90 rounded-md hover:bg-edc-blue/50 transition-all duration-200 flex items-center text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 16v-4" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6" />
+                </svg>
+                Save as Image
+              </button>
+              
+              <button 
+                onClick={resetApp}
+                className="px-4 py-2 bg-red-900/40 text-white/90 rounded-md hover:bg-red-700/60 transition-all duration-200 flex items-center text-sm"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Reset Everything
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Footer section with Tip Jar and About Me */}
+        <div className="text-center mt-6 mb-4 border-t border-edc-purple/10 pt-4">
+          <VenmoTipJar />
+          
+          <div className="-mt-1 opacity-70 hover:opacity-100 transition-opacity">
+            <a 
+              href="https://linktr.ee/mushiewaffle" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-[10px] text-white/70 hover:text-edc-pink/90 transition-colors"
+            >
+              About
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;

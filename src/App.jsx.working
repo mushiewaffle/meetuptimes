@@ -1156,10 +1156,8 @@ function App() {
                       toggleButtonRef={toggleModeRef}
                       onToggleMode={(mode) => setIsManualMode(mode)}
                     />
-                  </div>
-                )}
-                
-                {/* Show create schedule button when not showing creator */}
+                    
+                    {/* Cancel button */}
                 {!showScheduleCreator && (
                   <button 
                     onClick={() => setShowScheduleCreator(true)}
@@ -1224,20 +1222,6 @@ function App() {
                   </div>
                 </div>
               )}
-              
-              {/* Add a prominent Add a Schedule button above the schedule list */}
-              <div className="flex justify-end mt-8 mb-4">
-                <button
-                  onClick={createEmptySchedule}
-                  className="px-3 py-1.5 bg-gradient-to-r from-edc-blue to-edc-purple text-white text-sm font-medium rounded-md flex items-center transition-all shadow-md shadow-edc-purple/20 hover:shadow-edc-blue/30 hover:opacity-90"
-                  title="Create a new empty schedule"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add a Schedule
-                </button>
-              </div>
               
               {schedules.length > 0 && (
                 <ul className="space-y-2">
@@ -1526,11 +1510,11 @@ function App() {
               </div>
             )}
             
-            {/* Gap between schedule list and meetup button */}
-            <div className="mt-4">
-              {/* We removed modals in favor of inline editing */}
-              
-              {schedules.length > 0 && (
+            <div className="mt-4"></div>
+      
+      {/* We removed modals in favor of inline editing */}
+      
+        {schedules.length > 0 && (
                 <button
                   onClick={findMeetupGaps}
                   disabled={schedules.length < 2}

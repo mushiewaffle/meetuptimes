@@ -86,9 +86,6 @@ function App() {
   // Form validation errors
   const [formErrors, setFormErrors] = useState({});
   
-  // State to control visibility of schedule creator
-  const [showScheduleCreator, setShowScheduleCreator] = useState(false);
-  
   // Refs for edit forms to handle click-away
   const editSetFormRef = useRef(null);
   const addSetFormRef = useRef(null);
@@ -143,8 +140,8 @@ function App() {
         // Use default name (no AI indicator as requested)
         const scheduleName = `Schedule ${scheduleCounter}`;
         
-        // Add the schedule directly
-        setSchedules([...schedules, { name: scheduleName, sets }]);
+        // Add the schedule to the top of the list (consistent with other methods)
+        setSchedules([{ name: scheduleName, sets }, ...schedules]);
         
         // Update counter
         setScheduleCounter(scheduleCounter + 1);
@@ -218,38 +215,83 @@ function App() {
   }, [editingSetInfo, isAddingSetToSchedule]);
   
   /**
-   * Add the current schedule to the schedules list
-   * This function is called when clicking the "Add Schedule" button in manual entry mode
-   * as well as by the handleSetsExtracted function when sets are successfully added
+   * Handle adding a new empty schedule directly from the All Schedules section
+   * Immediately sets up name editing for better UX
+   */
+  const addEmptySchedule = () => {
+    try {
+      // Create an empty schedule with default name
+      const scheduleName = `Schedule ${scheduleCounter}`;
+      
+      // Create schedule object with properly initialized empty sets array
+      const newSchedule = {
+        name: scheduleName,
+        sets: [] // Explicitly initialize as empty array
+      };
+      
+      // Add new schedule at the top of the list
+      const newSchedules = [newSchedule, ...schedules];
+      setSchedules(newSchedules);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset any found gaps as they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Immediately start editing the name of the newly created schedule
+      // Since we're adding at the top, the index is 0
+      startEditingScheduleName(0);
+      
+      console.log(`Added empty schedule: ${scheduleName}`);
+    } catch (error) {
+      console.error('Error adding empty schedule:', error);
+    }
+  };
+  
+  /**
+   * Handle adding a new schedule from uploaded sets
    */
   const handleAddSchedule = () => {
-    // Only add if there are sets
-    if (currentSchedule.sets.length === 0) return;
-
-    const newSchedule = {
-      name: currentSchedule.name || `Schedule ${scheduleCounter}`,
-      sets: [...currentSchedule.sets]
-    };
-
-    setSchedules([...schedules, newSchedule]);
-    setScheduleCounter(scheduleCounter + 1);
-
-    // Reset current schedule
-    setCurrentSchedule({
-      name: '',
-      sets: []
-    });
-
-    // Reset meetup gaps since we have a new schedule
-    setMeetupGaps([]);
-    setMeetupPlan([]);
-
-    // Save to localStorage
     try {
-      const updatedSchedules = [...schedules, newSchedule];
-      localStorage.setItem('festivalSchedules', JSON.stringify(updatedSchedules));
+      // Validate sets exist
+      if (!currentSchedule.sets || currentSchedule.sets.length === 0) {
+        alert('Please upload a schedule with set times first');
+        return;
+      }
+      
+      // Use default name if not provided
+      const scheduleName = currentSchedule.name.trim() || `Schedule ${scheduleCounter}`;
+      
+      // Create deep copy of sets
+      const setsCopy = JSON.parse(JSON.stringify(currentSchedule.sets));
+      
+      // Add the schedule to the top of the list (consistent with addEmptySchedule)
+      setSchedules([{ name: scheduleName, sets: setsCopy }, ...schedules]);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset current schedule
+      setCurrentSchedule({ name: '', sets: [] });
+      
+      // Clear the uploader
+      document.dispatchEvent(new CustomEvent('clearUploader'));
+      
+      // Reset any found gaps as they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Reset to main page if we were on another page
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
+      }
+      
+      console.log(`Added schedule: ${scheduleName}`);
     } catch (error) {
-      console.error('Error saving to localStorage:', error);
+      console.error('Error adding schedule:', error);
+      alert('There was an error adding the schedule. Please try again.');
     }
   };
   
@@ -361,22 +403,109 @@ function App() {
    * @param {number} scheduleIndex - The index of the schedule to add a set to
    */
   const startAddingSetToSchedule = (scheduleIndex) => {
+    console.log('Starting to add set to schedule index:', scheduleIndex);
     setIsAddingSetToSchedule(scheduleIndex);
     // Cancel any other editing operations
     setEditingScheduleIndex(null);
     setEditingSetInfo(null);
+    
+    // Reset any form errors
+    setFormErrors({});
   };
-
+  
+  /**
+   * Handle the submission of the add set form
+   * @param {number} scheduleIdx - The index of the schedule to add a set to
+   */
+  const handleAddSet = (scheduleIdx) => {
+    try {
+      console.log('Handling add set for schedule:', scheduleIdx);
+      
+      // Get form values using schedule-specific IDs
+      const artistInput = document.getElementById(`newSetArtist-${scheduleIdx}`);
+      const timeInput = document.getElementById(`newSetTime-${scheduleIdx}`);
+      const stageInput = document.getElementById(`newSetStage-${scheduleIdx}`);
+      
+      if (!artistInput || !timeInput || !stageInput) {
+        console.error(`Form inputs not found for schedule ${scheduleIdx}`);
+        return;
+      }
+      
+      const artist = artistInput.value;
+      const timeValue = timeInput.value;
+      const stage = stageInput.value;
+      
+      console.log('Form values:', { artist, timeValue, stage });
+      
+      // Validate form
+      if (!artist || !timeValue || !stage) {
+        console.log('Form validation failed');
+        setFormErrors({
+          artist: !artist,
+          time: !timeValue,
+          stage: !stage
+        });
+        return;
+      }
+      
+      // Clear errors
+      setFormErrors({});
+      
+      // Create date object from time value
+      const [hours, minutes] = timeValue.split(':').map(Number);
+      const today = new Date();
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+      
+      // Create set object
+      const newSet = {
+        artist,
+        stage,
+        start: date.toISOString()
+      };
+      
+      console.log('Adding new set:', newSet);
+      
+      // Add set to schedule
+      addSetToSchedule(newSet);
+    } catch (error) {
+      console.error('Error in add set form submission:', error);
+    }
+  };
+  
   /**
    * Add a new set to an existing schedule
    * @param {Object} newSet - The new set to add
    */
   const addSetToSchedule = (newSet) => {
-    if (isAddingSetToSchedule === null) return;
+    if (isAddingSetToSchedule === null) {
+      console.error('No schedule selected for adding a set');
+      return;
+    }
     
     try {
-      const updatedSchedules = [...schedules];
+      console.log('Adding set to schedule index:', isAddingSetToSchedule);
+      console.log('New set data:', newSet);
+      console.log('Current schedules:', schedules);
+      
+      // Create a deep copy of schedules to avoid mutation issues
+      const updatedSchedules = JSON.parse(JSON.stringify(schedules));
+      
+      // Ensure the schedule exists
+      if (!updatedSchedules[isAddingSetToSchedule]) {
+        console.error('Schedule not found at index:', isAddingSetToSchedule);
+        return;
+      }
+      
+      // Ensure sets is initialized as an array
+      if (!updatedSchedules[isAddingSetToSchedule].sets) {
+        console.log('Initializing sets array for schedule');
+        updatedSchedules[isAddingSetToSchedule].sets = [];
+      }
+      
+      // Add the new set
       updatedSchedules[isAddingSetToSchedule].sets.push(newSet);
+      console.log('Set added successfully');
+      console.log('Updated schedule:', updatedSchedules[isAddingSetToSchedule]);
       
       // Helper function to adjust time for sorting with 8am reset
       const getAdjustedSortTime = (dateStr) => {
@@ -393,10 +522,14 @@ function App() {
       };
       
       // Sort sets by start time with 8am as reset point
-      updatedSchedules[isAddingSetToSchedule].sets.sort((a, b) => {
-        return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
-      });
+      if (updatedSchedules[isAddingSetToSchedule].sets.length > 1) {
+        updatedSchedules[isAddingSetToSchedule].sets.sort((a, b) => {
+          return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
+        });
+      }
       
+      // Update state with the new schedules
+      console.log('Setting updated schedules:', updatedSchedules);
       setSchedules(updatedSchedules);
       
       // Reset gaps since they're now outdated
@@ -410,10 +543,145 @@ function App() {
       console.error('Error adding set to schedule:', error);
     }
   };
-
+  
   /**
    * Cancel adding a set to a schedule
    */
+  const cancelAddingSet = () => {
+    setIsAddingSetToSchedule(null);
+    setFormErrors({});
+  };
+  
+  /**
+   * Cancel editing a set
+   */
+  const cancelEditingSet = () => {
+    setEditingSetInfo(null);
+    setFormErrors({});
+  };
+  
+  /**
+   * Delete a set from a schedule
+   * @param {number} scheduleIndex - The index of the schedule
+   * @param {number} setIndex - The index of the set to delete
+   */
+  const deleteSet = (scheduleIndex, setIndex) => {
+    try {
+      const updatedSchedules = [...schedules];
+      updatedSchedules[scheduleIndex].sets.splice(setIndex, 1);
+      setSchedules(updatedSchedules);
+        
+      // Reset gaps since they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+    } catch (error) {
+      console.error('Error deleting set:', error);
+    }
+  };
+
+/**
+ * Cancel adding a set to a schedule
+ */
+const cancelAddingSet = () => {
+  setIsAddingSetToSchedule(null);
+  setFormErrors({});
+};
+      
+    const artist = artistInput.value;
+    const timeValue = timeInput.value;
+    const stage = stageInput.value;
+      
+    console.log('Form values:', { artist, timeValue, stage });
+      
+    // Validate form
+    if (!artist || !timeValue || !stage) {
+      console.log('Form validation failed');
+      setFormErrors({
+        artist: !artist,
+        time: !timeValue,
+        stage: !stage
+      });
+      return;
+    }
+      
+    // Clear errors
+    setFormErrors({});
+      
+    // Create date object from time value
+    const [hours, minutes] = timeValue.split(':').map(Number);
+    const today = new Date();
+    const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+      
+    // Create set object
+    const newSet = {
+      artist,
+      stage,
+      start: date.toISOString()
+    };
+      
+    console.log('Adding new set:', newSet);
+      
+    // Add set to schedule
+    addSetToSchedule(newSet);
+  } catch (error) {
+    console.error('Error in add set form submission:', error);
+  }
+};
+
+/**
+ * Add a new set to an existing schedule
+ * @param {Object} newSet - The new set to add
+ */
+const addSetToSchedule = (newSet) => {
+  if (isAddingSetToSchedule === null) {
+    console.error('No schedule selected for adding a set');
+    return;
+  }
+      
+  try {
+    console.log('Adding set to schedule index:', isAddingSetToSchedule);
+    console.log('New set data:', newSet);
+    console.log('Current schedules:', schedules);
+      
+    const updatedSchedules = JSON.parse(JSON.stringify(schedules)); // Deep clone
+      
+    // Ensure the schedule exists
+    if (!updatedSchedules[isAddingSetToSchedule]) {
+      console.error('Schedule not found at index:', isAddingSetToSchedule);
+      return;
+    }
+      
+    // Ensure sets is initialized as an array
+    if (!updatedSchedules[isAddingSetToSchedule].sets) {
+      console.log('Initializing sets array for schedule');
+      updatedSchedules[isAddingSetToSchedule].sets = [];
+    }
+      
+    // Add the new set
+    updatedSchedules[isAddingSetToSchedule].sets.push(newSet);
+    console.log('Set added successfully');
+    console.log('Updated schedule:', updatedSchedules[isAddingSetToSchedule]);
+      
+    // Helper function to adjust time for sorting with 8am reset
+    const getAdjustedSortTime = (dateStr) => {
+      const date = new Date(dateStr);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+        
+      // Calculate hours offset from 8am (0-23 hours scale)
+      // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
+      const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
+        
+      // Return a comparable value (hours * 60 + minutes) for easy sorting
+      return adjustedHours * 60 + minutes;
+    };
+      
+    // Sort sets by start time with 8am as reset point
+    if (updatedSchedules[isAddingSetToSchedule].sets.length > 1) {
+      updatedSchedules[isAddingSetToSchedule].sets.sort((a, b) => {
+        return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
+      });
+    }
   const cancelAddingSet = () => {
     setIsAddingSetToSchedule(null);
     setFormErrors({});
@@ -1148,98 +1416,45 @@ function App() {
                   )}
                 </div>
                 
-                {/* Schedule creator section - only shown when showScheduleCreator is true */}
-                {showScheduleCreator && (
-                  <div className="text-center">
-                    <FestivalScheduleUploader 
-                      onSetsExtracted={handleSetsExtracted} 
-                      toggleButtonRef={toggleModeRef}
-                      onToggleMode={(mode) => setIsManualMode(mode)}
-                    />
-                  </div>
-                )}
-                
-                {/* Show create schedule button when not showing creator */}
-                {!showScheduleCreator && (
-                  <button 
-                    onClick={() => setShowScheduleCreator(true)}
-                    className="px-3 py-1 bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple rounded-md flex items-center text-sm transition-all duration-200"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Add Schedule
-                  </button>
-                )}
-              </div>
-              
-              {/* Schedule creator section - only shown when showScheduleCreator is true */}
-              {showScheduleCreator && (
-                <div className="mb-4 bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple">
+                {/* Schedule uploader */}
+                <div className="text-center">
                   <FestivalScheduleUploader 
                     onSetsExtracted={handleSetsExtracted} 
                     toggleButtonRef={toggleModeRef}
                     onToggleMode={(mode) => setIsManualMode(mode)}
                   />
-                  
-                  <div className="flex justify-center mt-2 space-x-2">
-                    {currentSchedule.sets.length > 0 && (
-                      <button
-                        onClick={() => {
-                          // Add the schedule
-                          const newSchedule = {
-                            name: currentSchedule.name || `Schedule ${scheduleCounter}`,
-                            sets: [...currentSchedule.sets]
-                          };
-                          
-                          setSchedules([...schedules, newSchedule]);
-                          setScheduleCounter(scheduleCounter + 1);
-                          
-                          // Reset current schedule
-                          setCurrentSchedule({
-                            name: '',
-                            sets: []
-                          });
-                          
-                          // Hide the creator
-                          setShowScheduleCreator(false);
-                        }}
-                        className="px-3 py-1.5 bg-gradient-to-r from-edc-pink to-edc-purple text-white rounded-md text-sm transition-all duration-200 hover:opacity-90"
-                      >
-                        Add Schedule
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setShowScheduleCreator(false);
-                        setCurrentSchedule({
-                          name: '',
-                          sets: []
-                        });
-                      }}
-                      className="px-3 py-1.5 bg-black/40 text-gray-300 hover:text-white rounded-md text-sm transition-all duration-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </div>
-              )}
-              
-              {/* Add a prominent Add a Schedule button above the schedule list */}
-              <div className="flex justify-end mt-8 mb-4">
-                <button
-                  onClick={createEmptySchedule}
-                  className="px-3 py-1.5 bg-gradient-to-r from-edc-blue to-edc-purple text-white text-sm font-medium rounded-md flex items-center transition-all shadow-md shadow-edc-purple/20 hover:shadow-edc-blue/30 hover:opacity-90"
-                  title="Create a new empty schedule"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add a Schedule
-                </button>
               </div>
               
-              {schedules.length > 0 && (
+              {/* Only show Add Schedule button when in manual mode */}
+              {isManualMode && (
+                <button
+                  onClick={handleAddSchedule}
+                  disabled={currentSchedule.sets.length === 0}
+                  className={`w-full py-3 rounded-md text-white font-medium transition-all ${currentSchedule.sets.length > 0 
+                    ? 'bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20' 
+                    : 'bg-gray-700 cursor-not-allowed opacity-50'}`}
+                >
+                  {currentSchedule.sets.length > 0 ? 'Add Schedule' : 'Upload Schedule First'}
+                </button>
+              )}
+            </div>
+            
+            {/* Schedule list display */}
+            {schedules.length > 0 && (
+              <div className="mt-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-lg font-medium text-edc-blue/90">All Schedules</h3>
+                  <button
+                    onClick={addEmptySchedule}
+                    className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-pink text-xs font-medium py-1.5 px-3 rounded-md flex items-center transition-all duration-200"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add a Schedule
+                  </button>
+                </div>
                 <ul className="space-y-2">
                   {schedules.map((schedule, idx) => (
                     <li key={idx} className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple schedule-item">
@@ -1283,6 +1498,7 @@ function App() {
                         )}
                         <div className="flex items-center space-x-2">
                           <button
+                            data-add-set-button={idx}
                             onClick={() => startAddingSetToSchedule(idx)}
                             className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-1 px-3 rounded-md flex items-center transition-all duration-200"
                             title="Add Set"
@@ -1418,17 +1634,21 @@ function App() {
                             
                             {/* Add New Set In-place Row */}
                             {isAddingSetToSchedule === idx && (
-                              <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 mt-1 bg-black/20 rounded-sm border-l-2 border-edc-green/40" ref={addSetFormRef}>
+                              <div 
+                                className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 mt-1 bg-black/20 rounded-sm border-l-2 border-edc-green/40" 
+                                ref={addSetFormRef}
+                                data-add-set-form={idx}
+                              >
                                 <input
                                   type="text"
-                                  id="newSetArtist"
+                                  id={`newSetArtist-${idx}`}
                                   className={`text-edc-pink font-medium bg-transparent border-b ${formErrors.artist ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-full text-center`}
                                   placeholder="Artist name"
                                   autoFocus
                                 />
                                 <input
                                   type="time"
-                                  id="newSetTime"
+                                  id={`newSetTime-${idx}`}
                                   className={`text-white bg-transparent border-b ${formErrors.time ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none appearance-none w-[90px] text-center mx-auto [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden`}
                                   style={{
                                     appearance: 'none',
@@ -1439,38 +1659,13 @@ function App() {
                                 <div className="text-edc-blue flex items-center">
                                   <input
                                     type="text"
-                                    id="newSetStage"
+                                    id={`newSetStage-${idx}`}
                                     className={`text-edc-blue bg-transparent border-b ${formErrors.stage ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-[70%] text-center`}
                                     placeholder="Stage name"
                                   />
                                   <div className="flex shrink-0 ml-auto">
                                       <button 
-                                        onClick={() => {
-                                          const artist = document.getElementById('newSetArtist').value;
-                                          const timeValue = document.getElementById('newSetTime').value;
-                                          const stage = document.getElementById('newSetStage').value;
-                                          
-                                          if (!artist || !timeValue || !stage) {
-                                            setFormErrors({
-                                              artist: !artist,
-                                              time: !timeValue,
-                                              stage: !stage
-                                            });
-                                            return;
-                                           }
-                                           // Clear errors
-                                           setFormErrors({});
-                                          
-                                          const [hours, minutes] = timeValue.split(':').map(Number);
-                                          const today = new Date();
-                                          const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
-                                          
-                                          addSetToSchedule({
-                                            artist,
-                                            stage,
-                                            start: date.toISOString()
-                                          });
-                                        }}
+                                        onClick={() => handleAddSet(idx)}
                                         className="text-green-500 hover:text-green-400 mx-1" 
                                         title="Add"
                                       >
@@ -1526,11 +1721,11 @@ function App() {
               </div>
             )}
             
-            {/* Gap between schedule list and meetup button */}
-            <div className="mt-4">
-              {/* We removed modals in favor of inline editing */}
-              
-              {schedules.length > 0 && (
+            <div className="mt-4"></div>
+      
+      {/* We removed modals in favor of inline editing */}
+      
+        {schedules.length > 0 && (
                 <button
                   onClick={findMeetupGaps}
                   disabled={schedules.length < 2}

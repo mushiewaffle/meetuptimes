@@ -1524,10 +1524,9 @@ function App() {
                   ))}
                 </ul>
               </div>
-            )}
             
-            {/* Gap between schedule list and meetup button */}
-            <div className="mt-4">
+              {/* Gap between schedule list and meetup button */}
+              <div className="mt-4">
               {/* We removed modals in favor of inline editing */}
               
               {schedules.length > 0 && (
@@ -1857,8 +1856,6 @@ function App() {
               ))}
               
               {/* Footer removed for cleaner screenshot */}
-            </div>
-            
             </div>
             
             {/* Action buttons */}

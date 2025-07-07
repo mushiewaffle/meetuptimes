@@ -1,35 +1,34 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { createWorker } from 'tesseract.js';
-import deduplicateSets from '../utils/deduplicateSets';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * Component for uploading and processing festival schedule images
- * Supports multiple image uploads and identifies different festival formats
+ * Component for parsing festival schedule data
+ * Supports AI-generated table input and manual entry
+ * @param {Object} props - Component props
+ * @param {Function} props.onSetsExtracted - Callback function to receive extracted sets
+ * @param {Function} props.onToggleMode - Callback function to handle mode toggle
+ * @param {boolean} props.initialManualMode - Whether to start in manual mode
+ * @param {Function} props.toggleButtonRef - Ref to expose toggle function
  */
-const FestivalScheduleUploader = ({ onSetsExtracted }) => {
+const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManualMode = true, toggleButtonRef }) => {
+
+  const [tableInput, setTableInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [processedSets, setProcessedSets] = useState([]);
-  const fileInputRef = useRef(null);
+  const [isAddingSet, setIsAddingSet] = useState(false);
+  const [tempNewSet, setTempNewSet] = useState(null);
+  const [editingSet, setEditingSet] = useState(null);
   
-  // Manual entry mode states
-  const [manualMode, setManualMode] = useState(false);
-  const [manualError, setManualError] = useState('');
-  const [editingIndex, setEditingIndex] = useState(null);
-  const [editingField, setEditingField] = useState(null);
-  const [editingValue, setEditingValue] = useState('');
-  
+  // Refs for detecting clicks outside of forms
+  const editFormRef = useRef(null);
+  const addFormRef = useRef(null); // For storing new set info
+  const [isManualEntry, setIsManualEntry] = useState(initialManualMode);
+
   // Listen for clear event when a friend is added
   useEffect(() => {
     const handleClearUploader = () => {
       // Clear the extracted sets
       setProcessedSets([]);
-      
-      // Reset the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = null;
-      }
     };
     
     // Add event listener
@@ -41,382 +40,346 @@ const FestivalScheduleUploader = ({ onSetsExtracted }) => {
     };
   }, []);
 
-  /**
-   * Handle multiple image uploads
-   * @param {Event} event - The file input change event
-   */
-  const handleImageUpload = async (event) => {
-    const files = Array.from(event.target.files);
-    if (files.length === 0) return;
+  // Handle click-away to cancel edit
+  useEffect(() => {
+    function handleClickOutside(event) {
+      // Ignore clicks on show more/hide sets buttons to prevent interference
+      if (event.target.closest('[data-action="toggle-schedule-expanded"]')) {
+        return;
+      }
+      
+      // Check if the click was outside the edit form
+      if (editingSet && editFormRef.current && !editFormRef.current.contains(event.target)) {
+        setEditingSet(null);
+      }
+      
+      // Also handle click-away for adding new set
+      if (isAddingSet && addFormRef.current && !addFormRef.current.contains(event.target)) {
+        // Only cancel if the click wasn't on any "add set" button
+        const clickedOnAddButton = event.target.closest('[data-add-set-button]');
+        if (!clickedOnAddButton) {
+          setIsAddingSet(false);
+          setTempNewSet(null);
+        }
+      }
+    }
+    
+    // Add event listener
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      // Remove event listener on cleanup
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingSet, isAddingSet]);
 
+  // Parse table input from AI GPT
+  const parseTableInput = (input) => {
+    if (!input.trim()) return [];
+    
+    const lines = input.trim().split('\n');
+    const parsedSets = [];
+    let headerRow = null;
+    let columnIndices = { artist: 0, time: 1, stage: 2 }; // Default order: artist, time, stage
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Skip empty lines and separator lines with dashes
+      if (!line.trim() || line.includes('---')) {
+        continue;
+      }
+      
+      // Extract column data from the table row
+      const columns = line.split('|').map(col => col.trim()).filter(col => col);
+      
+      // If this is the first non-empty, non-separator line, treat it as a header
+      if (!headerRow && columns.length >= 3) {
+        headerRow = columns;
+        
+        // Determine column positions based on header
+        for (let j = 0; j < headerRow.length; j++) {
+          const header = headerRow[j].toLowerCase();
+          if (header.includes('artist') || header.includes('dj') || header.includes('performer')) {
+            columnIndices.artist = j;
+          } else if (header.includes('time') || header.includes('start')) {
+            columnIndices.time = j;
+          } else if (header.includes('stage') || header.includes('location')) {
+            columnIndices.stage = j;
+          }
+        }
+        continue;
+      }
+      
+      // Process data rows
+      if (columns.length >= 3) {
+        const artist = columns[columnIndices.artist];
+        const timeStr = columns[columnIndices.time];
+        const stage = columns[columnIndices.stage];
+        
+        const time = convertToTimeFormat(timeStr);
+        
+        if (time && artist && stage) {
+          parsedSets.push({
+            time,
+            artist,
+            stage
+          });
+        }
+      }
+    }
+    
+    return parsedSets;
+  };
+
+  // Process table input and directly create schedule in AI parser mode
+  const processTableInput = () => {
+    if (!tableInput.trim()) return;
+    
+    // Clear any previous error messages
+    setErrorMessage('');
     setIsProcessing(true);
-    setProgress(0);
-    setError('');
-    
-    // Keep track of intermediate results for debugging
-    let allExtractedSets = [];
-    let processedCount = 0;
-    let tempProcessed = [...processedSets]; // Start with any existing processed sets
-
     try {
-      // Process each file individually
-      for (const file of files) {
-        // Process the current file
-        const extractedSets = await processImage(file);
-        console.log(`Extracted ${extractedSets.length} sets from ${file.name}`);
-        
-        // Add to our running total
-        allExtractedSets = [...allExtractedSets, ...extractedSets];
-        
-        // Update progress
-        processedCount++;
-        setProgress(Math.round((processedCount / files.length) * 100));
-        
-        // Apply intermediate deduplication to accumulate sets
-        tempProcessed = deduplicateSets(tempProcessed, extractedSets);
-      }
-
-      console.log(`All files processed. Total raw sets: ${allExtractedSets.length}`);
-      console.log(`After deduplication: ${tempProcessed.length} unique sets`);
+      const parsedSets = parseTableInput(tableInput);
       
-      // Sort by start time for display
-      tempProcessed.sort((a, b) => {
-        try {
-          return new Date(a.start) - new Date(b.start);
-        } catch {
-          return 0;
-        }
+      if (parsedSets.length === 0) {
+        setErrorMessage('No valid sets found in the table. Please check the format and make sure it includes Artist, Time, and Stage columns.');
+        setIsProcessing(false);
+        return;
+      }
+      
+      // Convert to the format expected by the parent component (with ISO date strings)
+      const formattedSets = parsedSets.map(set => {
+        const [hours, minutes] = set.time.split(':').map(Number);
+        const today = new Date();
+        const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+        
+        return {
+          artist: set.artist,
+          stage: set.stage,
+          start: date.toISOString()
+        };
       });
       
-      // Update state with deduplicated sets
-      setProcessedSets(tempProcessed);
-      
-      // Call the callback with the deduplicated sets
-      if (onSetsExtracted && tempProcessed.length > 0) {
-        console.log('Calling onSetsExtracted with deduplicated sets');
-        onSetsExtracted(tempProcessed);
-      }
-
-      setIsProcessing(false);
-      
-      // Reset the file input so the same files can be selected again if needed
-      if (fileInputRef.current) {
-        fileInputRef.current.value = null;
-      }
-    } catch (err) {
-      console.error('Error processing images:', err);
-      setIsProcessing(false);
-      setError('Error processing images. Please try again.');
-    }
-  };
-
-  /**
-   * Extract set time information from uploaded image using OCR
-   * @param {File} file - The uploaded image file
-   */
-  const processImage = async (file) => {
-    try {
-      // Start processing the image directly
-      console.log('Processing image:', file.name);
-      
-      // Initialize Tesseract worker with optimized configuration for festival schedules
-      const worker = await createWorker({
-        logger: progress => {
-          if (progress.status === 'recognizing text') {
-            setProgress(Math.round(progress.progress * 100));
-          }
-        }
-      });
-      
-      await worker.loadLanguage('eng');
-      await worker.initialize('eng');
-      
-      // Configure Tesseract parameters for better extraction of festival schedule formats
-      await worker.setParameters({
-        tessedit_char_whitelist: 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:. -@',
-        preserve_interword_spaces: '1',
-      });
-      
-      // Read the image
-      const { data } = await worker.recognize(file);
-      const text = data.text;
-      
-      // Preprocess OCR text
-      const preprocessedText = preprocessOcrText(text);
-      
-      // For reliability, we'll prioritize using hardcoded sets for known festivals
-      // This ensures the most accurate and reliable data, especially for critical sets
-      if (preprocessedText.includes('LINEUP') || 
-          preprocessedText.includes('SCHEDULE') || 
-          preprocessedText.includes('PM') || 
-          preprocessedText.includes('Stage')) {
+      // In AI Parser mode, directly create a schedule instead of just showing extracted sets
+      if (!isManualEntry && formattedSets.length > 0) {
+        // Directly dispatch an event to add the schedule
+        const event = new CustomEvent('addScheduleFromAI', { 
+          detail: { sets: formattedSets } 
+        });
+        document.dispatchEvent(event);
         
-        try {
-          const hardcodedSets = getHardcodedSets(preprocessedText);
-          
-          if (hardcodedSets && hardcodedSets.length > 0) {
-            console.log('Using reliable hardcoded sets:', hardcodedSets.length, 'sets found');
-            await worker.terminate();
-            return hardcodedSets;
-          }
-        } catch (err) {
-          console.error('Error using hardcoded sets:', err);
-          // Continue with other methods if hardcoded sets fail
+        // Clear input after successful processing
+        setTableInput('');
+        setProcessedSets([]); // Clear any processed sets
+      } else {
+        // Manual mode or fallback: just update the processed sets
+        setProcessedSets(formattedSets);
+        if (onSetsExtracted && formattedSets.length > 0) {
+          onSetsExtracted(formattedSets);
         }
       }
-      
-      // Fallback methods only if hardcoded sets don't apply
-      let extractedSets = [];
-      
-      // Method 1: Try to identify and parse Insomniac app format
-      try {
-        extractedSets = parseInsomniacFormat(preprocessedText);
-        console.log('Used Insomniac format parser, found', extractedSets.length, 'sets');
-      } catch (err) {
-        console.error('Error in Insomniac parser:', err);
-        extractedSets = [];
-      }
-      
-      // Method 2: Try direct pattern-based extraction if needed
-      if (extractedSets.length === 0) {
-        try {
-          extractedSets = attemptDirectExtraction(preprocessedText);
-          console.log('Used direct extraction, found', extractedSets.length, 'sets');
-        } catch (err) {
-          console.error('Error in direct extraction:', err);
-          extractedSets = [];
-        }
-      }
-      
-      // Release worker resources
-      await worker.terminate();
-      
-      return extractedSets;
     } catch (error) {
-      console.error('Error processing image:', error);
-      setError('Failed to process image. Please try a different screenshot.');
-      return [];
+      console.error('Error processing table input:', error);
+      setErrorMessage('Error parsing the table. Please check the format and make sure it follows the example shown in the placeholder.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Helper function to convert time string to 24-hour format for time input
+  const convertToTimeFormat = (timeStr) => {
+    if (!timeStr) return '';
+    
+    try {
+      // Handle formats like "4:00 PM", "5:25 PM", etc.
+      const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+      if (match) {
+        let [, hours, minutes, period] = match;
+        hours = parseInt(hours);
+        minutes = parseInt(minutes);
+        
+        if (period) {
+          period = period.toUpperCase();
+          if (period === 'PM' && hours !== 12) {
+            hours += 12;
+          } else if (period === 'AM' && hours === 12) {
+            hours = 0;
+          }
+        }
+        
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      }
+      
+      return '';
+    } catch {
+      return '';
     }
   };
 
   /**
-   * Get hardcoded sets for known festival screenshots
-   * @param {string} text - The preprocessed OCR text
-   * @returns {Array} - Array of set objects with artist, stage, start, and end times
+   * Handle time string conversion for both display and input
+   * @param {Date} dateObj - Date object to format
+   * @returns {string} - Time string in HH:MM format (24-hour)
    */
-  const getHardcodedSets = (text) => {
-    console.log('Using hardcoded sets as fallback');
+  const formatTimeForInput = (dateObj) => {
+    const hours = dateObj.getHours().toString().padStart(2, '0');
+    const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
+
+  /**
+   * Capitalize the first letter of each word in a string
+   * @param {string} str - String to capitalize
+   * @returns {string} - Title cased string
+   */
+  const toTitleCase = (str) => {
+    if (!str) return '';
+    return str.toLowerCase().split(' ')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  /**
+   * Save changes to a set being edited
+   */
+  const saveSetChanges = () => {
+    if (!editingSet) return;
     
-    // Create a base date for today
-    const baseDate = new Date();
-    baseDate.setHours(0, 0, 0, 0);
-    
-    // Helper function to create date objects
-    const createTime = (hours, minutes) => {
-      const date = new Date(baseDate);
-      date.setHours(hours, minutes, 0, 0);
-      return date.toISOString();
+    // Validate fields
+    const errors = {
+      artist: !editingSet.artist.trim(),
+      stage: !editingSet.stage.trim(),
+      time: !editingSet.time
     };
     
-    // Check which screenshot we're processing based on text clues
-    const lowerText = text.toLowerCase();
-    
-    // Complete lineup from both screenshots
-    // This ensures we capture all artists regardless of which image is processed
-    const allSets = [
-      { artist: 'Nobodies King', stage: 'Cyberian Stage', start: createTime(14, 0) },
-      { artist: 'Jeanie b2b Vampa', stage: 'Forbidden Stage', start: createTime(14, 45) },
-      { artist: 'Andromedik', stage: 'Mystic Stage', start: createTime(16, 0) },
-      { artist: 'Level Up', stage: 'Forbidden Stage', start: createTime(17, 30) },
-      { artist: 'Ray Volpe', stage: 'Forbidden Stage', start: createTime(18, 30) },
-      { artist: 'Wooli', stage: 'Cyberian Stage', start: createTime(20, 0) },
-      { artist: 'SLANDER B2B Svdden Death', stage: 'Forbidden Stage', start: createTime(21, 30) },
-      { artist: 'Jade Cicada', stage: 'Cyberian Stage', start: createTime(22, 0) }
-    ];
-    
-    // Filter out any artists that shouldn't be in this particular screenshot
-    // This helps prevent showing artists that aren't in the current image
-    if (lowerText.includes('nobodies') && !lowerText.includes('slander') && !lowerText.includes('jade')) {
-      // First screenshot (with Nobodies King but without SLANDER and Jade Cicada)
-      return allSets.filter(set => 
-        !set.artist.includes('SLANDER') && !set.artist.includes('Jade'));
-    } 
-    else if (lowerText.includes('slander') || lowerText.includes('jade')) {
-      // Second screenshot (with SLANDER and Jade Cicada)
-      return allSets.filter(set => 
-        !set.artist.includes('Nobodies') && !set.artist.includes('Jeanie'));
+    // If any errors, set them and return
+    if (errors.artist || errors.stage || errors.time) {
+      setEditingSet({
+        ...editingSet,
+        errors
+      });
+      return;
     }
     
-    // Return all sets if we can't determine which screenshot it is
-    return allSets;
+    // Create a new date from the time input
+    const timeParts = editingSet.time.split(':');
+    if (timeParts.length !== 2) return;
+    
+    const hours = parseInt(timeParts[0]);
+    const minutes = parseInt(timeParts[1]);
+    
+    const date = new Date();
+    date.setHours(hours);
+    date.setMinutes(minutes);
+    date.setSeconds(0);
+    
+    // Update the set with title-cased strings
+    const updatedSets = [...processedSets];
+    updatedSets[editingSet.index] = {
+      artist: toTitleCase(editingSet.artist.trim()),
+      stage: toTitleCase(editingSet.stage.trim()),
+      start: date.toISOString()
+    };
+    
+    // Helper function to adjust time for festival sorting (8am as starting point)
+    const getAdjustedSortTime = (dateStr) => {
+      const date = new Date(dateStr);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      
+      // Calculate hours offset from 8am (0-23 hours scale)
+      // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
+      const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
+      
+      // Return a comparable value (hours * 60 + minutes) for easy sorting
+      return adjustedHours * 60 + minutes;
+    };
+    
+    // Sort sets by festival time (8am as starting point)
+    const sortedSets = [...updatedSets].sort((a, b) => {
+      return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
+    });
+    
+    setProcessedSets(sortedSets);
+    onSetsExtracted(sortedSets);
+    setEditingSet(null);
   };
 
   /**
-   * Parse set times from Insomniac app format
-   * @param {string} text - The preprocessed OCR text
-   * @returns {Array} - Array of extracted sets
+   * Delete a set from the processed sets
+   * @param {number} index - Index of set to delete
    */
-  const parseInsomniacFormat = (text) => {
-    // Specialized parser for Insomniac app screenshots
-    const lines = text.split('\n').filter(line => line.trim());
-    const sets = [];
-    
-    // Look for specific time patterns in Insomniac format
-    const timePattern = /(\d{1,2})[:.]?(\d{2})\s*(AM|PM)/i;
-    
-    let currentTime = null;
-    let currentArtist = '';
-    let currentStage = '';
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      // Check for time pattern
-      const timeMatch = line.match(timePattern);
-      if (timeMatch) {
-        // Extract time components
-        const [_, hours, minutes, ampm] = timeMatch;
-        
-        // Create a timestamp
-        let h = parseInt(hours);
-        const m = parseInt(minutes);
-        
-        // Convert to 24-hour format
-        if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
-        if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
-        
-        const date = new Date();
-        date.setHours(h, m, 0, 0);
-        currentTime = date.toISOString();
-        
-        // Reset the artist and stage
-        currentArtist = '';
-        currentStage = '';
-        continue;
-      }
-      
-      // After a time, check for artist and stage info
-      if (currentTime) {
-        // If line contains 'Stage', it's likely a stage name
-        if (line.toLowerCase().includes('stage')) {
-          currentStage = line;
-          
-          // If we already have an artist, we can create a set
-          if (currentArtist) {
-            sets.push({
-              artist: currentArtist,
-              stage: currentStage,
-              start: currentTime
-            });
-            
-            currentArtist = ''; // Reset for next set
-          }
-        } 
-        // If not a stage and not a time, it's likely an artist
-        else if (!line.match(timePattern) && line.length > 1) {
-          currentArtist = line;
-          
-          // Check next line for stage information
-          if (i + 1 < lines.length && lines[i + 1].toLowerCase().includes('stage')) {
-            currentStage = lines[i + 1];
-            i++; // Skip the stage line
-            
-            sets.push({
-              artist: currentArtist,
-              stage: currentStage,
-              start: currentTime
-            });
-            
-            currentArtist = ''; // Reset for next set
-          }
-        }
-      }
-    }
-    
-    return sets;
+  const deleteSet = (index) => {
+    const updatedSets = processedSets.filter((_, i) => i !== index);
+    setProcessedSets(updatedSets);
+    onSetsExtracted(updatedSets);
   };
 
   /**
-   * Preprocess OCR text to improve extraction accuracy
-   * @param {string} text - Raw OCR text
-   * @returns {string} - Preprocessed text
+   * Add a new set to the processed sets
    */
-  const preprocessOcrText = (text) => {
-    return text
-      .replace(/\\n/g, '\n')
-      .replace(/[^\w\s.:@\-\n]/g, '')  // Remove unwanted symbols
-      .replace(/([0-9])l([0-9])/g, '$1:$2')  // "10l30" -> "10:30"
-      .replace(/([0-9])I([0-9])/g, '$1:$2')  // "10I30" -> "10:30"
-      .replace(/([0-9]);([0-9])/g, '$1:$2')  // "10;30" -> "10:30"
-      .replace(/([0-9])\.([0-9])/g, '$1:$2')  // "10.30" -> "10:30"
-      .replace(/(\d+)[:\s](\d+)([ap]m)/gi, '$1:$2 $3')  // Format times consistently
-      .replace(/\b(\d+):(\d+)\s*([AP]M?)\b/gi, '\n$1:$2 $3\n')  // Add linebreaks around times
-      .replace(/\b(village|forbidden|cosmic|kinetic|circuit|neon)\s*stage\b/gi, '\n$1 Stage\n')  // Add linebreaks around stages
-      .replace(/\s{2,}/g, ' ')  // Replace multiple spaces with single space
-      .trim();
-  };
-
-  /**
-   * Attempt to extract set information directly from preprocessed text
-   * @param {string} text - Preprocessed OCR text
-   * @returns {Array} - Array of extracted sets
-   */
-  const attemptDirectExtraction = (text) => {
-    const extractedSets = [];
-    const lines = text.split('\n').filter(line => line.trim());
+  const addNewSet = () => {
+    if (!tempNewSet) return;
     
-    // Improved time pattern detection specific to festival app formats
-    const timePattern = /(\d{1,2})[:.]?(\d{2})\s*(AM|PM)/i;
+    // Validate fields
+    const errors = {
+      artist: !tempNewSet.artist?.trim(),
+      stage: !tempNewSet.stage?.trim(),
+      time: !tempNewSet.time
+    };
     
-    let currentStage = '';
-    let currentTime = '';
-    
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      
-      // Check if line contains a time
-      const timeMatch = line.match(timePattern);
-      if (timeMatch) {
-        // Extract hours, minutes, and AM/PM
-        const [_, hours, minutes, ampm] = timeMatch;
-        
-        // Parse hours and minutes
-        let h = parseInt(hours);
-        const m = parseInt(minutes);
-        
-        // Convert to 24-hour format
-        if (ampm.toUpperCase() === 'PM' && h < 12) h += 12;
-        if (ampm.toUpperCase() === 'AM' && h === 12) h = 0;
-        
-        // Create timestamp
-        const date = new Date();
-        date.setHours(h, m, 0, 0);
-        currentTime = date.toISOString();
-        continue;
-      }
-      
-      // Check if line contains a stage
-      if (line.toLowerCase().includes('stage')) {
-        currentStage = line;
-        continue;
-      }
-      
-      // If we have a time and a line that's not a time or stage, it's probably an artist
-      if (currentTime && !line.match(timePattern) && !line.toLowerCase().includes('stage') && line.length > 2) {
-        // Filter out known false positives (OCR errors)
-        if (line.toLowerCase().includes('swando') || line.toLowerCase().includes('fieldz')) {
-          continue; // Skip this line
-        }
-        
-        extractedSets.push({
-          artist: line,
-          stage: currentStage || 'Unknown Stage',
-          start: currentTime
-        });
-      }
+    // If any errors, set them and return
+    if (errors.artist || errors.stage || errors.time) {
+      setTempNewSet({
+        ...tempNewSet,
+        errors
+      });
+      return;
     }
     
-    return extractedSets;
+    // Create a new date from the time input
+    const timeParts = tempNewSet.time.split(':');
+    if (timeParts.length !== 2) return;
+    
+    const hours = parseInt(timeParts[0]);
+    const minutes = parseInt(timeParts[1]);
+    
+    const date = new Date();
+    date.setHours(hours);
+    date.setMinutes(minutes);
+    date.setSeconds(0);
+    
+    // Add the new set with title-cased strings
+    const newSetObj = {
+      artist: toTitleCase(tempNewSet.artist.trim()),
+      stage: toTitleCase(tempNewSet.stage.trim()),
+      start: date.toISOString()
+    };
+    
+    // Add the new set and sort by time starting from 8am
+    const getAdjustedSortTime = (dateStr) => {
+      const date = new Date(dateStr);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      
+      // Calculate hours offset from 8am (0-23 hours scale)
+      // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
+      const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
+      
+      // Return a comparable value (hours * 60 + minutes) for easy sorting
+      return adjustedHours * 60 + minutes;
+    };
+    
+    const updatedSets = [...processedSets, newSetObj].sort((a, b) => {
+      return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
+    });
+    
+    setProcessedSets(updatedSets);
+    onSetsExtracted(updatedSets);
+    
+    // Reset for the next entry
+    setTempNewSet(null);
+    setIsAddingSet(false);
   };
 
   /**
@@ -424,31 +387,32 @@ const FestivalScheduleUploader = ({ onSetsExtracted }) => {
    * @returns {JSX.Element} - The list component
    */
   const renderProcessedSets = () => {
-    if (processedSets.length === 0) return null;
+    // Always show UI in manual mode if we're adding a set, even with no sets
+    if (processedSets.length === 0 && !isAddingSet && !isManualEntry) return null;
     
     return (
       <div className="mt-4 bg-black bg-opacity-60 p-3 rounded-md border border-edc-purple">
         <div className="flex justify-between items-center mb-2">
-          <h3 className="text-edc-blue text-sm font-medium">Extracted Sets:</h3>
+          <h3 className="text-edc-blue text-sm font-medium">{isManualEntry ? 'Create a Schedule Manually' : 'Extracted Sets:'}</h3>
           <div className="flex items-center">
-            <span className="text-xs text-edc-pink mr-2">{processedSets.length} sets found</span>
-            <button 
-              onClick={() => {
-                setProcessedSets([]);
-                // Reset the file input
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = null;
-                }
-                // Clear the sets at parent level too
-                onSetsExtracted([]);
-              }}
-              className="text-red-400 hover:text-red-300 text-xs font-medium"
-              title="Discard Sets"
-            >
-              Discard
-            </button>
-          </div>
+          <span className="text-xs text-edc-pink mr-2">{processedSets.length} sets found</span>
+          <button 
+            onClick={() => {
+              setProcessedSets([]);
+              // Clear the sets at parent level too
+              onSetsExtracted([]);
+              setIsAddingSet(false);
+              setEditingSet(null);
+              setTableInput('');
+            }}
+            className="text-red-400 hover:text-red-300 text-xs font-medium"
+            title="Discard Sets"
+          >
+            Discard
+          </button>
         </div>
+        </div>
+        
         <div className="max-h-48 overflow-y-auto">
           {processedSets.map((set, index) => {
             // Format the time for display
@@ -462,208 +426,372 @@ const FestivalScheduleUploader = ({ onSetsExtracted }) => {
             hours = hours ? hours : 12; // Convert 0 to 12
             const formattedTime = `${hours}:${minutes} ${ampm}`;
             
+            // Check if this set is being edited
+            const isEditing = editingSet !== null && editingSet.index === index;
+            
             return (
-              <div key={index} className={`grid grid-cols-3 gap-2 text-sm py-2 ${index !== processedSets.length - 1 ? 'border-b border-edc-purple/10' : ''}`}>
-                <div className="text-edc-pink font-medium truncate">{set.artist}</div>
-                <div className="text-white">{formattedTime}</div>
-                <div className="flex items-center justify-between">
-                  <span className="text-edc-blue truncate">{set.stage}</span>
-                  <button
-                    onClick={() => removeManualSet(index)}
-                    className="text-red-400 hover:text-red-300 ml-2 text-xs"
-                    title="Remove Set"
-                  >
-                    ✕
-                  </button>
-                </div>
+              <div key={index} className={`group ${index !== processedSets.length - 1 ? 'border-b border-edc-purple/10' : ''}`}>
+                {isEditing ? (
+                  <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2" ref={editFormRef}>
+                    <input 
+                      type="text" 
+                      placeholder="Artist"
+                      value={editingSet.artist}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        setEditingSet({...editingSet, artist: newValue, errors: {...(editingSet.errors || {}), artist: !newValue.trim()}});
+                      }}
+                      className={`bg-transparent ${editingSet.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
+                    />
+                    <div className="text-white text-center">
+                      <input 
+                        type="time"
+                        value={editingSet.time}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setEditingSet({...editingSet, time: newValue, errors: {...(editingSet.errors || {}), time: !newValue}});
+                        }}
+                        className={`bg-transparent ${editingSet.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
+                        style={{
+                          appearance: 'none',
+                          '-webkit-appearance': 'none',
+                          '-moz-appearance': 'textfield'
+                        }}
+                      />
+                    </div>
+                    <div className="text-edc-blue flex items-center">
+                      <input 
+                        type="text" 
+                        placeholder="Stage"
+                        value={editingSet.stage}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setEditingSet({...editingSet, stage: newValue, errors: {...(editingSet.errors || {}), stage: !newValue.trim()}});
+                        }}
+                        className={`bg-transparent ${editingSet.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
+                      />
+                      <div className="flex shrink-0 ml-auto">
+                        <button 
+                          onClick={saveSetChanges}
+                          className="text-edc-purple hover:text-edc-blue mx-1"
+                          title="Save Changes"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button 
+                          onClick={() => setEditingSet(null)}
+                          className="text-red-400 hover:text-red-300 ml-1"
+                          title="Cancel"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 text-sm py-2">
+                    <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                    <div className="text-white">{formattedTime}</div>
+                    <div className="text-edc-blue truncate flex justify-between items-center">
+                      <span className="truncate flex-1 text-center">{set.stage}</span>
+                      <div className="flex">
+                        <button
+                          onClick={() => setEditingSet({
+                            index,
+                            artist: set.artist,
+                            stage: set.stage,
+                            time: formatTimeForInput(new Date(set.start))
+                          })}
+                          className="text-edc-purple hover:text-edc-blue ml-1 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                          title="Edit Set"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => deleteSet(index)}
+                          className="text-red-400 hover:text-red-300 ml-1 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                          title="Delete Set"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m6-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+        
+        {/* Add Set button or add form at bottom for better UX */}
+        {isAddingSet ? (
+          <div className="mt-3 border-t border-edc-purple/20 pt-2" ref={addFormRef}>
+              <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 group">
+                <input 
+                  type="text" 
+                  placeholder="Artist"
+                  value={tempNewSet?.artist || ''}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setTempNewSet({
+                      ...tempNewSet,
+                      artist: newValue, 
+                      errors: {...(tempNewSet?.errors || {}), artist: !newValue.trim()}
+                    });
+                  }}
+                  className={`bg-transparent ${tempNewSet?.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
+                />
+                <div className="text-white text-center">
+                  <input 
+                    type="time"
+                    value={tempNewSet?.time || ''}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setTempNewSet({
+                        ...tempNewSet,
+                        time: newValue, 
+                        errors: {...(tempNewSet?.errors || {}), time: !newValue}
+                      });
+                    }}
+                    className={`bg-transparent ${tempNewSet?.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
+                    style={{
+                      appearance: 'none',
+                      '-webkit-appearance': 'none',
+                      '-moz-appearance': 'textfield'
+                    }}
+                  />
+                </div>
+              <div className="text-edc-blue flex items-center">
+                <input 
+                  type="text" 
+                  placeholder="Stage"
+                  value={tempNewSet?.stage || ''}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setTempNewSet({
+                      ...tempNewSet,
+                      stage: newValue, 
+                      errors: {...(tempNewSet?.errors || {}), stage: !newValue.trim()}
+                    });
+                  }}
+                  className={`bg-transparent ${tempNewSet?.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
+                />
+                <div className="flex shrink-0 ml-auto">
+                  <button 
+                    onClick={addNewSet}
+                    className="text-edc-purple hover:text-edc-blue mx-1"
+                    title="Save Set"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setIsAddingSet(false);
+                      setTempNewSet(null);
+                    }}
+                    className="text-red-400 hover:text-red-300 ml-1"
+                    title="Cancel"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center mt-3">
+            <button 
+              data-add-set-button="manual"
+              onClick={() => {
+                setIsAddingSet(true);
+                setTempNewSet({
+                  artist: '',
+                  stage: '',
+                  time: '',
+                  errors: {}
+                });
+              }}
+              className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
+              title="Add Set"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              Add Set
+            </button>
+          </div>
+        )}
       </div>
     );
   };
 
-  // Add a new set to the processed sets list
-  const addManualSet = () => {
-    // Validate all fields are filled
-    if (!editingSet.artist || !editingSet.time || !editingSet.stage) {
-      setManualError('Please fill all fields');
-      return;
+  // Toggle between AI parser and manual entry modes
+  const toggleEntryMode = useCallback(() => {
+    // Clear sets when toggling modes
+    setProcessedSets([]);
+    setEditingSet(null);
+    setTempNewSet(null);
+    setIsAddingSet(false);
+    setTableInput('');
+    
+    const newMode = !isManualEntry;
+    setIsManualEntry(newMode);
+    
+    // If switching to manual mode, start with the add set form
+    if (newMode) {
+      setIsAddingSet(true);
     }
-
-    // Parse time to create a Date object (similar to extracted sets format)
-    const timeRegex = /^(\d{1,2}):(\d{2})\s+(AM|PM)$/i;
-    const timeMatch = editingSet.time.match(timeRegex);
     
-    if (!timeMatch) {
-      setManualError('Please use format: 1:00 PM');
-      return;
+    // Notify parent component
+    if (onToggleMode) {
+      onToggleMode(newMode);
     }
+  }, [isManualEntry, onToggleMode]);
+  
+  // Expose toggle function to parent via ref
+  useEffect(() => {
+    if (toggleButtonRef) {
+      toggleButtonRef.current = {
+        toggle: toggleEntryMode,
+        isManualMode: isManualEntry
+      };
+    }
+  }, [toggleButtonRef, isManualEntry, toggleEntryMode]);
 
-    let [_, hours, minutes, period] = timeMatch;
-    hours = parseInt(hours, 10);
-    minutes = parseInt(minutes, 10);
+  // Use useEffect to notify parent of initial state on mount
+  useEffect(() => {
+    if (onToggleMode) {
+      onToggleMode(isManualEntry);
+    }
     
-    // Convert to 24-hour format
-    if (period.toUpperCase() === 'PM' && hours < 12) hours += 12;
-    if (period.toUpperCase() === 'AM' && hours === 12) hours = 0;
-    
-    // Create date object with current date
-    const startTime = new Date();
-    startTime.setHours(hours);
-    startTime.setMinutes(minutes);
-    startTime.setSeconds(0);
-    startTime.setMilliseconds(0);
-    
-    // Create end time (one hour later by default)
-    const endTime = new Date(startTime);
-    endTime.setHours(endTime.getHours() + 1);
-    
-    // Add new set with a unique id
-    const newSet = {
-      id: Date.now(),
-      artist: editingSet.artist.trim(),
-      stage: editingSet.stage.trim(),
-      start: startTime,
-      end: endTime
-    };
-    
-    // Add to processed sets
-    const updatedSets = [...processedSets, newSet];
-    
-    // Sort by start time
-    updatedSets.sort((a, b) => {
-      try {
-        return new Date(a.start) - new Date(b.start);
-      } catch {
-        return 0;
-      }
-    });
-    
-    setProcessedSets(updatedSets);
-    setEditingSet({ artist: '', time: '', stage: '' });
-    setManualError('');
-  };
-
-  // Remove a set from the list
-  const removeManualSet = (index) => {
-    const newSets = [...processedSets];
-    newSets.splice(index, 1);
-    setProcessedSets(newSets);
-  };
+    // If in manual entry mode, automatically start adding a set
+    if (isManualEntry && processedSets.length === 0) {
+      setIsAddingSet(true);
+      // Initialize the temp new set for the edit form
+      setTempNewSet({
+        artist: '',
+        stage: '',
+        time: '',
+        errors: {}
+      });
+    }
+  }, [onToggleMode, isManualEntry, processedSets.length]);
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h3 className="text-edc-blue text-sm font-medium">Schedule Entry</h3>
-        <button
-          onClick={toggleManualMode}
-          className="text-edc-pink text-xs px-2 py-1 border border-edc-pink/30 rounded-md hover:bg-edc-purple/20 transition-colors"
-        >
-          {manualMode ? '📷 Switch to Upload' : '✏️ Manual Entry'}
-        </button>
-      </div>
       
-      {manualMode && (
-        <div className="space-y-3 p-3 border border-dashed border-edc-purple/40 rounded-lg bg-black/30">
-          <div className="flex flex-wrap gap-2">
-            <input
-              type="text"
-              name="artist"
-              placeholder="Artist Name"
-              value={editingSet.artist}
-              onChange={handleManualInputChange}
-              className="flex-1 min-w-[120px] bg-black/70 border border-edc-purple/50 rounded-md px-3 py-2 text-white text-sm focus:border-edc-pink outline-none"
-            />
-            <input
-              type="text"
-              name="time"
-              placeholder="Start Time (e.g., 8:30 PM)"
-              value={editingSet.time}
-              onChange={handleManualInputChange}
-              className="flex-1 min-w-[150px] bg-black/70 border border-edc-purple/50 rounded-md px-3 py-2 text-white text-sm focus:border-edc-pink outline-none"
-            />
-            <input
-              type="text"
-              name="stage"
-              placeholder="Stage Name"
-              value={editingSet.stage}
-              onChange={handleManualInputChange}
-              className="flex-1 min-w-[120px] bg-black/70 border border-edc-purple/50 rounded-md px-3 py-2 text-white text-sm focus:border-edc-pink outline-none"
-            />
-            <button
-              onClick={addManualSet}
-              className="bg-edc-blue/30 hover:bg-edc-blue/50 text-white text-sm px-3 py-2 rounded-md transition-colors"
-            >
-              Add Set
-            </button>
+      {!isManualEntry && (
+        <>
+          <div className="space-y-3">
+            <div className="space-y-3">
+              <div className="bg-black/40 border border-edc-purple/40 rounded-lg p-4">
+                <h3 className="text-edc-blue text-sm font-medium mb-4">AI Set Parser</h3>
+                
+                <div className="flex flex-col space-y-3">
+                  {/* Step 1: Get data */}
+                  <div className="flex items-center space-x-2">
+                    <div className="bg-edc-blue/60 text-white text-xs font-medium rounded-full w-5 h-5 flex items-center justify-center">1</div>
+                    <span className="text-white/80 text-xs">Get schedule</span>
+                    <a 
+                      href="https://chatgpt.com/g/g-68655cca11a8819199c988aa0d95c3c4-music-festival-schedule-parser" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="bg-edc-purple/80 text-white px-3 py-1 rounded-md hover:bg-edc-purple transition-colors text-xs font-medium"
+                    >
+                      GPT Schedule Parser
+                    </a>
+                    <details className="group inline-block">
+                      <summary className="cursor-pointer text-edc-pink hover:text-edc-purple text-xs">No ChatGPT account?</summary>
+                      <div className="absolute mt-1 p-2 bg-black/60 border border-edc-purple/30 rounded text-xs text-white/80 whitespace-pre-wrap max-h-36 overflow-y-auto max-w-md z-10">
+I have a screenshot of a music festival schedule. Extract the information into a clean markdown table exactly in this order:
+
+| Artist | Start Time | Stage Name |
+|--------|------------|-----------|
+| [artist name] | [time] | [stage name] |
+
+- Only include entries clearly showing an artist name, start time, and stage name.
+- If the image doesn't clearly contain a readable festival schedule, reply exactly with: 
+"I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
+
+Do not add extra explanations—just provide the markdown table.
+                      </div>
+                    </details>
+                  </div>
+                  
+                  {/* Step 2: Paste table */}
+                  <div className="flex items-start">
+                    <div className="bg-edc-blue/60 text-white text-xs font-medium rounded-full w-5 h-5 flex items-center justify-center mt-1 mr-2">2</div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-white/80 text-xs">Paste table here</span>
+                        <button
+                          onClick={() => setTableInput('')}
+                          className="text-red-400 hover:text-red-300 text-xs"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <textarea
+                        value={tableInput}
+                        onChange={(e) => setTableInput(e.target.value)}
+                        placeholder={`Example format:
+| Artist        | Start Time | Stage Name    |
+| ------------- | ---------- | ------------- |
+| Subtronics    | 10:00 PM   | Main Stage    |
+| Martin Garrix | 11:20 PM   | Kinetic Grass |
+`}
+                        className="w-full h-32 bg-transparent border border-edc-purple/30 rounded text-white text-sm p-3 resize-none focus:outline-none focus:border-edc-pink/50 placeholder-white/40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
           
-          {manualError && (
-            <p className="text-red-400 text-xs">{manualError}</p>
-          )}
-        </div>
-      )}
-      
-      {!manualMode && (
-      <div className="space-y-3">
-        <div className="relative rounded-lg border border-dashed border-edc-purple/40 bg-black/40 p-4 text-center hover:border-edc-pink/50 transition-all duration-200 cursor-pointer hover:bg-black/50">
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleImageUpload}
-            ref={fileInputRef}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-          />
-          <div className="flex flex-col items-center justify-center py-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-edc-purple/70 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <p className="text-xs text-white/50 mb-1 tracking-wide">Drag and drop festival schedule screenshots or click to browse</p>
-          </div>
-        </div>
-      </div>
-      )}
-      
-      {!manualMode && isProcessing && (
-        <div className="mb-4">
-          <div className="flex items-center mb-1">
-            <div className="w-full bg-black rounded-full h-3 mr-2 border border-edc-purple/30 overflow-hidden">
-              <div 
-                className="bg-gradient-to-r from-edc-purple to-edc-pink h-full rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${progress}%` }}
-              ></div>
+          {/* Error message display */}
+          {errorMessage && (
+            <div className="mt-2 bg-red-900/60 border border-red-500/50 p-3 rounded-md relative">
+              <div className="flex items-start">
+                <div className="text-red-400 text-sm pr-6">{errorMessage}</div>
+                <button 
+                  onClick={() => setErrorMessage('')}
+                  className="absolute top-2 right-2 text-red-400 hover:text-red-300"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-            <span className="text-edc-pink text-xs font-medium">{progress}%</span>
+          )}
+          
+          {/* Moved Add Schedule button outside the nested divs */}
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={processTableInput}
+              disabled={!tableInput.trim() || isProcessing}
+              className="bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20 disabled:opacity-50 disabled:bg-gray-700 text-white text-sm font-medium py-3 px-8 rounded-md transition-all duration-200 w-1/3"
+            >
+              {isProcessing ? 'Processing...' : 'Add Schedule'}
+            </button>
           </div>
-          <div className="flex items-center text-edc-purple text-xs">
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-edc-pink" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span>Processing festival schedule, extracting set times...</span>
-          </div>
-        </div>
-      )}
-      
-      {!manualMode && error && (
-        <div className="text-red-500 text-sm bg-red-100 p-2 rounded-md mb-4">
-          {error}
-        </div>
+        </>
       )}
       
       {renderProcessedSets()}
-      
-      {processedSets.length > 0 && !manualMode && (
-        <button
-          onClick={() => onSetsExtracted(processedSets)}
-          className="w-full py-2 rounded-md text-white text-sm bg-gradient-to-r from-edc-blue/70 to-edc-pink/70 hover:from-edc-blue hover:to-edc-pink transition-colors"
-        >
-          Add to Schedule
-        </button>
-      )}
     </div>
   );
 };

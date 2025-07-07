@@ -83,23 +83,15 @@ function App() {
   // Track which schedules are expanded
   const [expandedSchedules, setExpandedSchedules] = useState({});
   
-  // Form validation errors
-  const [formErrors, setFormErrors] = useState({});
-  
-  // State to control visibility of schedule creator
-  const [showScheduleCreator, setShowScheduleCreator] = useState(false);
-  
-  // Refs for edit forms to handle click-away
-  const editSetFormRef = useRef(null);
-  const addSetFormRef = useRef(null);
-  
   // Track which schedule is being edited (for name editing)
   const [editingScheduleIndex, setEditingScheduleIndex] = useState(null);
   const [editingScheduleName, setEditingScheduleName] = useState('');
   
   // State for editing sets within schedules
-  const [editingSetInfo, setEditingSetInfo] = useState(null); // { scheduleIndex, setIndex, set }
-  const [isAddingSetToSchedule, setIsAddingSetToSchedule] = useState(null); // scheduleIndex
+  // Track which set is being edited or if a new set is being added
+  const [editingSetInfo, setEditingSetInfo] = useState(null); // {scheduleIndex, setIndex, set}
+  const [isAddingSetToSchedule, setIsAddingSetToSchedule] = useState(null); // scheduleIndex if adding to a schedule
+  const [tempNewSet, setTempNewSet] = useState(null); // Used for adding a new set inline
   
   // Animation properties for fade-in transitions
   // (Animation handled through CSS classes instead)
@@ -186,70 +178,48 @@ function App() {
     }
   }, [schedules, selectedGaps, meetupPlan]);
   
-  // Handle click-away to cancel editing
-  useEffect(() => {
-    function handleClickOutside(event) {
-      // Ignore clicks on toggle schedule expanded buttons
-      if (event.target.closest('[data-action="toggle-schedule-expanded"]')) {
+  /**
+   * Handle adding a new schedule
+   */
+  const handleAddSchedule = () => {
+    try {
+      // Validate sets exist
+      if (!currentSchedule.sets || currentSchedule.sets.length === 0) {
+        alert('Please upload a schedule with set times first');
         return;
       }
       
-      // For editing existing sets
-      if (editingSetInfo && editSetFormRef.current && !editSetFormRef.current.contains(event.target)) {
-        setEditingSetInfo(null);
-        setFormErrors({});
+      // Use default name if not provided
+      const scheduleName = currentSchedule.name.trim() || `Schedule ${scheduleCounter}`;
+      
+      // Create deep copy of sets
+      const setsCopy = JSON.parse(JSON.stringify(currentSchedule.sets));
+      
+      // Add the schedule
+      setSchedules([...schedules, { name: scheduleName, sets: setsCopy }]);
+      
+      // Update counter
+      setScheduleCounter(scheduleCounter + 1);
+      
+      // Reset current schedule
+      setCurrentSchedule({ name: '', sets: [] });
+      
+      // Clear the uploader
+      document.dispatchEvent(new CustomEvent('clearUploader'));
+      
+      // Reset any found gaps as they're now outdated
+      setMeetupGaps([]);
+      setMeetupPlan([]);
+      
+      // Reset to main page if we were on another page
+      if (currentPage !== 'main') {
+        setCurrentPage('main');
       }
       
-      // For adding new sets
-      if (isAddingSetToSchedule !== null && addSetFormRef.current && !addSetFormRef.current.contains(event.target)) {
-        // Check if clicked on any add set button
-        const clickedOnAddButton = event.target.closest('[data-add-set-button]');
-        if (!clickedOnAddButton) {
-          setIsAddingSetToSchedule(null);
-          setFormErrors({});
-        }
-      }
-    }
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [editingSetInfo, isAddingSetToSchedule]);
-  
-  /**
-   * Add the current schedule to the schedules list
-   * This function is called when clicking the "Add Schedule" button in manual entry mode
-   * as well as by the handleSetsExtracted function when sets are successfully added
-   */
-  const handleAddSchedule = () => {
-    // Only add if there are sets
-    if (currentSchedule.sets.length === 0) return;
-
-    const newSchedule = {
-      name: currentSchedule.name || `Schedule ${scheduleCounter}`,
-      sets: [...currentSchedule.sets]
-    };
-
-    setSchedules([...schedules, newSchedule]);
-    setScheduleCounter(scheduleCounter + 1);
-
-    // Reset current schedule
-    setCurrentSchedule({
-      name: '',
-      sets: []
-    });
-
-    // Reset meetup gaps since we have a new schedule
-    setMeetupGaps([]);
-    setMeetupPlan([]);
-
-    // Save to localStorage
-    try {
-      const updatedSchedules = [...schedules, newSchedule];
-      localStorage.setItem('festivalSchedules', JSON.stringify(updatedSchedules));
+      console.log(`Added schedule: ${scheduleName}`);
     } catch (error) {
-      console.error('Error saving to localStorage:', error);
+      console.error('Error adding schedule:', error);
+      alert('There was an error adding the schedule. Please try again.');
     }
   };
   
@@ -279,144 +249,32 @@ function App() {
   /**
    * Start editing a set within a schedule
    * @param {number} scheduleIndex - The index of the schedule
-   * @param {number} setIndex - The index of the set within the schedule
-   */
-  const startEditingSet = (scheduleIndex, setIndex) => {
-    const setToEdit = { ...schedules[scheduleIndex].sets[setIndex] };
-    setEditingSetInfo({ scheduleIndex, setIndex, set: setToEdit });
-    // Cancel any other editing operations
-    setEditingScheduleIndex(null);
-    setIsAddingSetToSchedule(null);
-  };
-  
-  /**
-   * Save changes to an edited set
-   */
-  const saveEditedSet = (updatedSet) => {
-    if (!editingSetInfo) return;
-    
-    try {
-      const { scheduleIndex, setIndex } = editingSetInfo;
-      const updatedSchedules = [...schedules];
-      updatedSchedules[scheduleIndex].sets[setIndex] = updatedSet;
-      
-      // Helper function to adjust time for sorting with 8am reset
-      const getAdjustedSortTime = (dateStr) => {
-        const date = new Date(dateStr);
-        const hours = date.getHours();
-        const minutes = date.getMinutes();
-        
-        // Calculate hours offset from 8am (0-23 hours scale)
-        // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
-        const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
-        
-        // Return a comparable value (hours * 60 + minutes) for easy sorting
-        return adjustedHours * 60 + minutes;
-      };
-      
-      // Sort sets by start time with 8am as reset point
-      updatedSchedules[scheduleIndex].sets.sort((a, b) => {
-        return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
-      });
-      
-      setSchedules(updatedSchedules);
-      
-      // Reset gaps since they're now outdated
-      setMeetupGaps([]);
-      setMeetupPlan([]);
-      
-      // Clear editing state
-      setEditingSetInfo(null);
-    } catch (error) {
-      console.error('Error saving edited set:', error);
-    }
-  };
-  
-  const cancelEditingSet = () => {
-    setEditingSetInfo(null);
-    setFormErrors({});
-  };
-
-  /**
-   * Delete a set from a schedule
-   * @param {number} scheduleIndex - The index of the schedule
-   * @param {number} setIndex - The index of the set to delete
-   */
-  const deleteSet = (scheduleIndex, setIndex) => {
-    try {
-      const updatedSchedules = [...schedules];
-      updatedSchedules[scheduleIndex].sets.splice(setIndex, 1);
-      setSchedules(updatedSchedules);
-      
-      // Reset gaps since they're now outdated
-      setMeetupGaps([]);
-      setMeetupPlan([]);
-    } catch (error) {
-      console.error('Error deleting set:', error);
-    }
-  };
-
-  /**
-   * Start adding a new set to a schedule
-   * @param {number} scheduleIndex - The index of the schedule to add a set to
    */
   const startAddingSetToSchedule = (scheduleIndex) => {
     setIsAddingSetToSchedule(scheduleIndex);
     // Cancel any other editing operations
-    setEditingScheduleIndex(null);
-    setEditingSetInfo(null);
-  };
 
-  /**
-   * Add a new set to an existing schedule
-   * @param {Object} newSet - The new set to add
-   */
-  const addSetToSchedule = (newSet) => {
-    if (isAddingSetToSchedule === null) return;
-    
-    try {
-      const updatedSchedules = [...schedules];
-      updatedSchedules[isAddingSetToSchedule].sets.push(newSet);
-      
-      // Helper function to adjust time for sorting with 8am reset
-      const getAdjustedSortTime = (dateStr) => {
-        const date = new Date(dateStr);
-        const hours = date.getHours();
-        const minutes = date.getMinutes();
-        
-        // Calculate hours offset from 8am (0-23 hours scale)
-        // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
-        const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
-        
-        // Return a comparable value (hours * 60 + minutes) for easy sorting
-        return adjustedHours * 60 + minutes;
-      };
-      
-      // Sort sets by start time with 8am as reset point
-      updatedSchedules[isAddingSetToSchedule].sets.sort((a, b) => {
-        return getAdjustedSortTime(a.start) - getAdjustedSortTime(b.start);
-      });
-      
-      setSchedules(updatedSchedules);
-      
-      // Reset gaps since they're now outdated
-      setMeetupGaps([]);
-      setMeetupPlan([]);
-      
-      // Clear adding state
-      setIsAddingSetToSchedule(null);
-      setFormErrors({});
-    } catch (error) {
-      console.error('Error adding set to schedule:', error);
-    }
-  };
+/**
+ * Start editing a set within a schedule
+ */
+const startEditingSet = (scheduleIndex, setIndex) => {
+  const schedule = schedules[scheduleIndex];
+  const set = schedule.sets[setIndex];
+  setEditingSetInfo({ scheduleIndex, setIndex, set: {...set} });
+  // Cancel any other editing operations
+  setIsAddingSetToSchedule(null);
+  setTempNewSet(null);
+};
 
-  /**
+/**
+ * Save changes to an edited set
+ */
+const saveEditedSet = () => {
+  if (!editingSetInfo) return;
    * Cancel adding a set to a schedule
    */
   const cancelAddingSet = () => {
     setIsAddingSetToSchedule(null);
-    setFormErrors({});
   };
   
   /**
@@ -898,33 +756,6 @@ function App() {
       // Scroll to top on page change
       window.scrollTo(0, 0);
     } catch (error) {
-      console.error('Error generating meetup plan:', error);
-    }
-  };
-  
-  /**
-   * Format time for display in 12-hour format or 24-hour format
-   * @param {string|Date} time - ISO string or Date object
-   * @param {string} formatType - Optional format ('HH:mm' for 24-hour format)
-   * @returns {string} - Formatted time string
-   */
-  const formatTime = (time, formatType) => {
-    try {
-      if (!time) return '--:-- --';
-      const date = typeof time === 'string' ? parseISO(time) : time;
-      if (isNaN(date.getTime())) return '--:-- --';
-      
-      if (formatType === 'HH:mm') {
-        // 24-hour format for time input fields
-        const hours = date.getHours().toString().padStart(2, '0');
-        const minutes = date.getMinutes().toString().padStart(2, '0');
-        return `${hours}:${minutes}`;
-      }
-      
-      return format(date, 'h:mm a');
-    } catch {
-      // Silent error handling for better UX
-      return '--:-- --';
     }
   };
   
@@ -1148,98 +979,34 @@ function App() {
                   )}
                 </div>
                 
-                {/* Schedule creator section - only shown when showScheduleCreator is true */}
-                {showScheduleCreator && (
-                  <div className="text-center">
-                    <FestivalScheduleUploader 
-                      onSetsExtracted={handleSetsExtracted} 
-                      toggleButtonRef={toggleModeRef}
-                      onToggleMode={(mode) => setIsManualMode(mode)}
-                    />
-                  </div>
-                )}
-                
-                {/* Show create schedule button when not showing creator */}
-                {!showScheduleCreator && (
-                  <button 
-                    onClick={() => setShowScheduleCreator(true)}
-                    className="px-3 py-1 bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple rounded-md flex items-center text-sm transition-all duration-200"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
-                    Add Schedule
-                  </button>
-                )}
-              </div>
-              
-              {/* Schedule creator section - only shown when showScheduleCreator is true */}
-              {showScheduleCreator && (
-                <div className="mb-4 bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple">
+                {/* Schedule uploader */}
+                <div className="text-center">
                   <FestivalScheduleUploader 
                     onSetsExtracted={handleSetsExtracted} 
                     toggleButtonRef={toggleModeRef}
                     onToggleMode={(mode) => setIsManualMode(mode)}
                   />
-                  
-                  <div className="flex justify-center mt-2 space-x-2">
-                    {currentSchedule.sets.length > 0 && (
-                      <button
-                        onClick={() => {
-                          // Add the schedule
-                          const newSchedule = {
-                            name: currentSchedule.name || `Schedule ${scheduleCounter}`,
-                            sets: [...currentSchedule.sets]
-                          };
-                          
-                          setSchedules([...schedules, newSchedule]);
-                          setScheduleCounter(scheduleCounter + 1);
-                          
-                          // Reset current schedule
-                          setCurrentSchedule({
-                            name: '',
-                            sets: []
-                          });
-                          
-                          // Hide the creator
-                          setShowScheduleCreator(false);
-                        }}
-                        className="px-3 py-1.5 bg-gradient-to-r from-edc-pink to-edc-purple text-white rounded-md text-sm transition-all duration-200 hover:opacity-90"
-                      >
-                        Add Schedule
-                      </button>
-                    )}
-                    <button
-                      onClick={() => {
-                        setShowScheduleCreator(false);
-                        setCurrentSchedule({
-                          name: '',
-                          sets: []
-                        });
-                      }}
-                      className="px-3 py-1.5 bg-black/40 text-gray-300 hover:text-white rounded-md text-sm transition-all duration-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </div>
-              )}
-              
-              {/* Add a prominent Add a Schedule button above the schedule list */}
-              <div className="flex justify-end mt-8 mb-4">
-                <button
-                  onClick={createEmptySchedule}
-                  className="px-3 py-1.5 bg-gradient-to-r from-edc-blue to-edc-purple text-white text-sm font-medium rounded-md flex items-center transition-all shadow-md shadow-edc-purple/20 hover:shadow-edc-blue/30 hover:opacity-90"
-                  title="Create a new empty schedule"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add a Schedule
-                </button>
               </div>
               
-              {schedules.length > 0 && (
+              {/* Only show Add Schedule button when in manual mode */}
+              {isManualMode && (
+                <button
+                  onClick={handleAddSchedule}
+                  disabled={currentSchedule.sets.length === 0}
+                  className={`w-full py-3 rounded-md text-white font-medium transition-all ${currentSchedule.sets.length > 0 
+                    ? 'bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20' 
+                    : 'bg-gray-700 cursor-not-allowed opacity-50'}`}
+                >
+                  {currentSchedule.sets.length > 0 ? 'Add Schedule' : 'Upload Schedule First'}
+                </button>
+              )}
+            </div>
+            
+            {/* Schedule list display */}
+            {schedules.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-lg font-medium text-edc-blue/90 mb-2">All Schedules</h3>
                 <ul className="space-y-2">
                   {schedules.map((schedule, idx) => (
                     <li key={idx} className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple schedule-item">
@@ -1305,68 +1072,57 @@ function App() {
                       {schedule.sets.length > 0 && (
                         <div className="mt-2">
                           <div className="flex flex-col space-y-1">
-                            {/* Show only first 3 sets when not expanded, or all sets when expanded */}
-                            {(expandedSchedules[idx] ? schedule.sets : schedule.sets.slice(0, 3)).map((set, setIdx) => (
-                              editingSetInfo && editingSetInfo.scheduleIndex === idx && editingSetInfo.setIndex === setIdx ? (
-                                // In-place editing for an existing set
-                                <div key={`edit-${setIdx}`} className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 bg-black/20 rounded-sm border-l-2 border-edc-pink/40" ref={editSetFormRef}>
-                                  <input
-                                    type="text"
-                                    value={editingSetInfo?.set?.artist || ''}
-                                    onChange={(e) => setEditingSetInfo({
-                                      ...editingSetInfo, 
-                                      set: {...editingSetInfo.set, artist: e.target.value}
-                                    })}
-                                    className={`text-edc-pink font-medium bg-transparent border-b ${formErrors.artist ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-full text-center`}
-                                    autoFocus
-                                  />
-                                  <input
-                                    type="time"
-                                    value={formatTime(editingSetInfo.set.start, 'HH:mm')}
-                                    onChange={(e) => {
-                                      const [hours, minutes] = e.target.value.split(':').map(Number);
-                                      const date = new Date(editingSetInfo.set.start);
-                                      date.setHours(hours, minutes, 0, 0);
-                                      setEditingSetInfo({
-                                        ...editingSetInfo, 
-                                        set: {...editingSetInfo.set, start: date.toISOString()}
-                                      });
-                                    }}
-                                    className={`text-white bg-transparent border-b ${formErrors.time ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none appearance-none w-[90px] text-center mx-auto [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden`}
-                                    style={{
-                                      appearance: 'none',
-                                      '-webkit-appearance': 'none',
-                                      '-moz-appearance': 'textfield'
-                                    }}
-                                  />
-                                  <div className="text-edc-blue flex items-center">
-                                    <input
-                                      type="text"
-                                      value={editingSetInfo?.set?.stage || ''}
+                            {/* Always show first 3 sets */}
+                            {schedule.sets.slice(0, 3).map((set, setIdx) => (
+                              <div key={setIdx} className="group grid grid-cols-[1fr,auto,1fr,auto] gap-2 text-sm py-1 px-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30">
+                                {editingSetInfo && editingSetInfo.scheduleIndex === idx && editingSetInfo.setIndex === setIdx ? (
+                                  <>
+                                    <input 
+                                      type="text" 
+                                      value={editingSetInfo.set.artist}
                                       onChange={(e) => setEditingSetInfo({
                                         ...editingSetInfo, 
-                                        set: {...editingSetInfo.set, stage: e.target.value}
+                                        set: {
+                                          ...editingSetInfo.set, 
+                                          artist: e.target.value
+                                        }
                                       })}
-                                      className={`text-edc-blue bg-transparent border-b ${formErrors.stage ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-[70%] text-center`}
+                                      className="bg-transparent text-edc-pink font-medium focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-left"
+                                    />
+                                    <input 
+                                      type="time"
+                                      value={formatTime(editingSetInfo.set.start, 'HH:mm')}
+                                      onChange={(e) => {
+                                        const [hours, minutes] = e.target.value.split(':').map(Number);
+                                        const date = new Date(editingSetInfo.set.start);
+                                        date.setHours(hours, minutes, 0, 0);
+                                        setEditingSetInfo({
+                                          ...editingSetInfo, 
+                                          set: {
+                                            ...editingSetInfo.set, 
+                                            start: date.toISOString()
+                                          }
+                                        });
+                                      }}
+                                      className="bg-transparent text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden w-[90px] text-center mx-auto"
+                                    />
+                                    <input 
+                                      type="text" 
+                                      value={editingSetInfo.set.stage}
+                                      onChange={(e) => setEditingSetInfo({
+                                        ...editingSetInfo, 
+                                        set: {
+                                          ...editingSetInfo.set, 
+                                          stage: e.target.value
+                                        }
+                                      })}
+                                      className="bg-transparent text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-full text-left"
                                     />
                                     <div className="flex shrink-0 ml-auto">
-                                       <button 
-                                        onClick={() => {
-                                          // Validate fields before saving
-                                          const { artist, stage, start } = editingSetInfo.set;
-                                          if (!artist || !stage || !start) {
-                                            setFormErrors({
-                                              artist: !artist,
-                                              stage: !stage,
-                                              time: !start
-                                            });
-                                            return;
-                                          }
-                                          setFormErrors({});
-                                          saveEditedSet(editingSetInfo.set);
-                                        }}
-                                        className="text-green-500 hover:text-green-400 mx-1" 
-                                        title="Save"
+                                      <button 
+                                        onClick={() => saveEditedSet(editingSetInfo.set)}
+                                        className="text-edc-purple hover:text-edc-blue mx-1"
+                                        title="Save Changes"
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -1374,7 +1130,7 @@ function App() {
                                       </button>
                                       <button 
                                         onClick={cancelEditingSet}
-                                        className="text-gray-400 hover:text-gray-300 ml-1" 
+                                        className="text-red-400 hover:text-red-300 ml-1"
                                         title="Cancel"
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1382,19 +1138,16 @@ function App() {
                                         </svg>
                                       </button>
                                     </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                // Normal display of an existing set
-                                <div key={setIdx} className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30">
-                                  <div className="text-edc-pink font-medium truncate text-center">{set.artist}</div>
-                                  <div className="text-white text-center">{formatTime(set.start)}</div>
-                                  <div className="text-edc-blue flex items-center">
-                                    <div className="text-center truncate w-[70%]">{set.stage}</div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                                    <div className="text-white">{formatTime(set.start)}</div>
+                                    <div className="text-edc-blue truncate">{set.stage}</div>
                                     <div className="flex shrink-0 ml-auto">
                                       <button 
                                         onClick={() => startEditingSet(idx, setIdx)}
-                                        className="text-edc-purple hover:text-edc-blue mx-1" 
+                                        className="text-edc-purple hover:text-edc-blue mx-1 opacity-0 group-hover:opacity-100" 
                                         title="Edit Set"
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1403,7 +1156,7 @@ function App() {
                                       </button>
                                       <button 
                                         onClick={() => deleteSet(idx, setIdx)}
-                                        className="text-red-400 hover:text-red-300 ml-1" 
+                                        className="text-red-400 hover:text-red-300 ml-1 opacity-0 group-hover:opacity-100" 
                                         title="Delete Set"
                                       >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1411,112 +1164,132 @@ function App() {
                                         </svg>
                                       </button>
                                     </div>
-                                  </div>
-                                </div>
-                              )
-                            ))}
+                                  </>
+                                )}
+                              </div>
+                            ))
                             
-                            {/* Add New Set In-place Row */}
-                            {isAddingSetToSchedule === idx && (
-                              <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 mt-1 bg-black/20 rounded-sm border-l-2 border-edc-green/40" ref={addSetFormRef}>
-                                <input
-                                  type="text"
-                                  id="newSetArtist"
-                                  className={`text-edc-pink font-medium bg-transparent border-b ${formErrors.artist ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-full text-center`}
-                                  placeholder="Artist name"
-                                  autoFocus
-                                />
-                                <input
-                                  type="time"
-                                  id="newSetTime"
-                                  className={`text-white bg-transparent border-b ${formErrors.time ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none appearance-none w-[90px] text-center mx-auto [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden`}
-                                  style={{
-                                    appearance: 'none',
-                                    '-webkit-appearance': 'none',
-                                    '-moz-appearance': 'textfield'
-                                  }}
-                                />
-                                <div className="text-edc-blue flex items-center">
-                                  <input
-                                    type="text"
-                                    id="newSetStage"
-                                    className={`text-edc-blue bg-transparent border-b ${formErrors.stage ? 'border-red-500' : 'border-edc-purple/30'} focus:border-edc-pink focus:outline-none w-[70%] text-center`}
-                                    placeholder="Stage name"
-                                  />
-                                  <div className="flex shrink-0 ml-auto">
-                                      <button 
-                                        onClick={() => {
-                                          const artist = document.getElementById('newSetArtist').value;
-                                          const timeValue = document.getElementById('newSetTime').value;
-                                          const stage = document.getElementById('newSetStage').value;
-                                          
-                                          if (!artist || !timeValue || !stage) {
-                                            setFormErrors({
-                                              artist: !artist,
-                                              time: !timeValue,
-                                              stage: !stage
-                                            });
-                                            return;
-                                           }
-                                           // Clear errors
-                                           setFormErrors({});
-                                          
-                                          const [hours, minutes] = timeValue.split(':').map(Number);
-                                          const today = new Date();
-                                          const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
-                                          
-                                          addSetToSchedule({
-                                            artist,
-                                            stage,
-                                            start: date.toISOString()
-                                          });
-                                        }}
-                                        className="text-green-500 hover:text-green-400 mx-1" 
-                                        title="Add"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                      </button>
-                                      <button 
-                                        onClick={cancelAddingSet}
-                                        className="text-gray-400 hover:text-gray-300 ml-1" 
-                                        title="Cancel"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                            )}
-                            
-                            {/* Show expansion button if there are more than 3 sets and not expanded */}
+                            {/* Show expansion button if there are more than 3 sets */}
                             {schedule.sets.length > 3 && !expandedSchedules[idx] && (
-                              <button
-                                data-action="toggle-schedule-expanded"
-                                onClick={() => toggleScheduleExpanded(idx)}
-                                className="mt-1 w-full py-1 text-xs text-edc-blue hover:text-edc-purple bg-black/20 rounded-sm transition-colors"
-                              >
-                                Show {schedule.sets.length - 3} more sets
-                              </button>
+                              <div className="mt-2">
+                                <button 
+                                  onClick={() => toggleScheduleExpanded(idx)}
+                                  className="text-sm text-edc-blue hover:text-edc-pink px-2 py-1 rounded-md border border-edc-blue/30 hover:border-edc-pink/50 transition-colors"
+                                >
+                                  Show {schedule.sets.length - 3} more sets
+                                </button>
+                              </div>
                             )}
                             
-                            {/* Show hide button if expanded */}
-                            {expandedSchedules[idx] && schedule.sets.length > 3 && (
-                              <button
-                                data-action="toggle-schedule-expanded"
-                                onClick={() => toggleScheduleExpanded(idx)}
-                                className="mt-1 w-full py-1 text-xs text-edc-purple hover:text-edc-blue bg-black/20 rounded-sm transition-colors"
-                              >
-                                Hide {schedule.sets.length - 3} sets
-                              </button>
+                            {/* Show the rest of the sets if expanded */}
+                            {expandedSchedules[idx] && (
+                              <>
+                                {schedule.sets.slice(3).map((set, setIdx) => (
+                                  <div key={setIdx + 3} className="group grid grid-cols-[1fr,auto,1fr,auto] gap-2 text-sm py-1 px-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30">
+                                    {editingSetInfo && editingSetInfo.scheduleIndex === idx && editingSetInfo.setIndex === (setIdx + 3) ? (
+                                      <>
+                                        <input 
+                                          type="text" 
+                                          value={editingSetInfo.set.artist}
+                                          onChange={(e) => setEditingSetInfo({
+                                            ...editingSetInfo, 
+                                            set: {
+                                              ...editingSetInfo.set, 
+                                              artist: e.target.value
+                                            }
+                                          })}
+                                          className="bg-transparent text-edc-pink font-medium focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-left"
+                                        />
+                                        <input 
+                                          type="time"
+                                          value={formatTime(editingSetInfo.set.start, 'HH:mm')}
+                                          onChange={(e) => {
+                                            const [hours, minutes] = e.target.value.split(':').map(Number);
+                                            const date = new Date(editingSetInfo.set.start);
+                                            date.setHours(hours, minutes, 0, 0);
+                                            setEditingSetInfo({
+                                              ...editingSetInfo, 
+                                              set: {
+                                                ...editingSetInfo.set, 
+                                                start: date.toISOString()
+                                              }
+                                            });
+                                          }}
+                                          className="bg-transparent text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden w-[90px] text-center mx-auto"
+                                        />
+                                        <input 
+                                          type="text" 
+                                          value={editingSetInfo.set.stage}
+                                          onChange={(e) => setEditingSetInfo({
+                                            ...editingSetInfo, 
+                                            set: {
+                                              ...editingSetInfo.set, 
+                                              stage: e.target.value
+                                            }
+                                          })}
+                                          className="bg-transparent text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-full text-left"
+                                        />
+                                        <div className="flex shrink-0 ml-auto">
+                                          <button 
+                                            onClick={() => saveEditedSet(editingSetInfo.set)}
+                                            className="text-edc-purple hover:text-edc-blue mx-1"
+                                            title="Save Changes"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                            </svg>
+                                          </button>
+                                          <button 
+                                            onClick={cancelEditingSet}
+                                            className="text-red-400 hover:text-red-300 ml-1"
+                                            title="Cancel"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                                        <div className="text-white">{formatTime(set.start)}</div>
+                                        <div className="text-edc-blue truncate">{set.stage}</div>
+                                        <div className="flex shrink-0 ml-auto">
+                                          <button 
+                                            onClick={() => startEditingSet(idx, setIdx + 3)}
+                                            className="text-edc-purple hover:text-edc-blue mx-1 opacity-0 group-hover:opacity-100" 
+                                            title="Edit Set"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                          </button>
+                                          <button 
+                                            onClick={() => deleteSet(idx, setIdx + 3)}
+                                            className="text-red-400 hover:text-red-300 ml-1 opacity-0 group-hover:opacity-100" 
+                                            title="Delete Set"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </>  
+                                <div className="mt-2">
+                                  <button 
+                                    onClick={() => toggleScheduleExpanded(idx)}
+                                    className="text-sm text-edc-blue hover:text-edc-pink px-2 py-1 rounded-md border border-edc-blue/30 hover:border-edc-pink/50 transition-colors"
+                                  >
+                                    Hide sets
+                                  </button>
+                                </div>
+                              </>
                             )}
-                            
-                            {/* We no longer need to show expanded sets here because we're showing them in the main set map */}
-                            
-                            {/* No need for warning message, using inline validation */}
                           </div>
                         </div>
                       )}
@@ -1526,11 +1299,11 @@ function App() {
               </div>
             )}
             
-            {/* Gap between schedule list and meetup button */}
-            <div className="mt-4">
-              {/* We removed modals in favor of inline editing */}
-              
-              {schedules.length > 0 && (
+            <div className="mt-4"></div>
+      
+      {/* No modals - inline editing only */}
+      
+        {schedules.length > 0 && (
                 <button
                   onClick={findMeetupGaps}
                   disabled={schedules.length < 2}
@@ -1849,7 +1622,6 @@ function App() {
                             </svg>
                           </button>
                         )}
-
                       </div>
                     )}
                   </div>
