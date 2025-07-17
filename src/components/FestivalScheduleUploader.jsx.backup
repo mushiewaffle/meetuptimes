@@ -1,10 +1,8 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import OpenAI from 'openai';
-import deduplicateSets from '../utils/deduplicateSets';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 /**
- * Component for uploading and processing festival schedule images
- * Supports multiple image uploads and identifies different festival formats
+ * Component for parsing festival schedule data
+ * Supports AI-generated table input and manual entry
  * @param {Object} props - Component props
  * @param {Function} props.onSetsExtracted - Callback function to receive extracted sets
  * @param {Function} props.onToggleMode - Callback function to handle mode toggle
@@ -12,26 +10,25 @@ import deduplicateSets from '../utils/deduplicateSets';
  * @param {Function} props.toggleButtonRef - Ref to expose toggle function
  */
 const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManualMode = true, toggleButtonRef }) => {
-  const [mode, setMode] = useState('manual'); // 'ai-parser' or 'manual'
+
   const [tableInput, setTableInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const [processedSets, setProcessedSets] = useState([]);
   const [isAddingSet, setIsAddingSet] = useState(false);
   const [tempNewSet, setTempNewSet] = useState(null);
-  const [editingSet, setEditingSet] = useState(null); // For storing new set info
+  const [editingSet, setEditingSet] = useState(null);
+  
+  // Refs for detecting clicks outside of forms
+  const editFormRef = useRef(null);
+  const addFormRef = useRef(null); // For storing new set info
   const [isManualEntry, setIsManualEntry] = useState(initialManualMode);
-  const fileInputRef = useRef(null);
 
   // Listen for clear event when a friend is added
   useEffect(() => {
     const handleClearUploader = () => {
       // Clear the extracted sets
       setProcessedSets([]);
-      
-      // Reset the file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = null;
-      }
     };
     
     // Add event listener
@@ -43,30 +40,91 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
     };
   }, []);
 
+  // Handle click-away to cancel edit
+  useEffect(() => {
+    function handleClickOutside(event) {
+      // Ignore clicks on show more/hide sets buttons to prevent interference
+      if (event.target.closest('[data-action="toggle-schedule-expanded"]')) {
+        return;
+      }
+      
+      // Check if the click was outside the edit form
+      if (editingSet && editFormRef.current && !editFormRef.current.contains(event.target)) {
+        setEditingSet(null);
+      }
+      
+      // Also handle click-away for adding new set
+      if (isAddingSet && addFormRef.current && !addFormRef.current.contains(event.target)) {
+        // Only cancel if the click wasn't on any "add set" button
+        // Check if clicked element or any of its parents has data-add-set-button attribute
+        const clickedOnAddButton = event.target.closest('[data-add-set-button]');
+        
+        if (!clickedOnAddButton) {
+          setIsAddingSet(false);
+          setTempNewSet(null);
+        }
+      }
+    }
+    
+    // Add event listener
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      // Remove event listener on cleanup
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [editingSet, isAddingSet]);
+
   // Parse table input from AI GPT
   const parseTableInput = (input) => {
     if (!input.trim()) return [];
     
     const lines = input.trim().split('\n');
     const parsedSets = [];
+    let headerRow = null;
+    let columnIndices = { artist: 0, time: 1, stage: 2 }; // Default order: artist, time, stage
     
-    for (const line of lines) {
-      // Skip empty lines and header separator lines
-      if (!line.trim() || line.includes('---') || line.includes('Start Time')) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Skip empty lines and separator lines with dashes
+      if (!line.trim() || line.includes('---')) {
         continue;
       }
       
-      // Parse table row format: | time | artist | stage |
-      const match = line.match(/\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/);
-      if (match) {
-        const [, timeStr, artist, stage] = match;
-        const time = convertToTimeFormat(timeStr.trim());
+      // Extract column data from the table row
+      const columns = line.split('|').map(col => col.trim()).filter(col => col);
+      
+      // If this is the first non-empty, non-separator line, treat it as a header
+      if (!headerRow && columns.length >= 3) {
+        headerRow = columns;
         
-        if (time && artist.trim() && stage.trim()) {
+        // Determine column positions based on header
+        for (let j = 0; j < headerRow.length; j++) {
+          const header = headerRow[j].toLowerCase();
+          if (header.includes('artist') || header.includes('dj') || header.includes('performer')) {
+            columnIndices.artist = j;
+          } else if (header.includes('time') || header.includes('start')) {
+            columnIndices.time = j;
+          } else if (header.includes('stage') || header.includes('location')) {
+            columnIndices.stage = j;
+          }
+        }
+        continue;
+      }
+      
+      // Process data rows
+      if (columns.length >= 3) {
+        const artist = columns[columnIndices.artist];
+        const timeStr = columns[columnIndices.time];
+        const stage = columns[columnIndices.stage];
+        
+        const time = convertToTimeFormat(timeStr);
+        
+        if (time && artist && stage) {
           parsedSets.push({
             time,
-            artist: artist.trim(),
-            stage: stage.trim()
+            artist,
+            stage
           });
         }
       }
@@ -75,16 +133,56 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
     return parsedSets;
   };
 
-  // Process table input
+  // Process table input and directly create schedule in AI parser mode
   const processTableInput = () => {
     if (!tableInput.trim()) return;
     
+    // Clear any previous error messages
+    setErrorMessage('');
     setIsProcessing(true);
     try {
-      const sets = parseTableInput(tableInput);
-      setProcessedSets(sets);
+      const parsedSets = parseTableInput(tableInput);
+      
+      if (parsedSets.length === 0) {
+        setErrorMessage('No valid sets found in the table. Please check the format and make sure it includes Artist, Time, and Stage columns.');
+        setIsProcessing(false);
+        return;
+      }
+      
+      // Convert to the format expected by the parent component (with ISO date strings)
+      const formattedSets = parsedSets.map(set => {
+        const [hours, minutes] = set.time.split(':').map(Number);
+        const today = new Date();
+        const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+        
+        return {
+          artist: set.artist,
+          stage: set.stage,
+          start: date.toISOString()
+        };
+      });
+      
+      // In AI Parser mode, directly create a schedule instead of just showing extracted sets
+      if (!isManualEntry && formattedSets.length > 0) {
+        // Directly dispatch an event to add the schedule
+        const event = new CustomEvent('addScheduleFromAI', { 
+          detail: { sets: formattedSets } 
+        });
+        document.dispatchEvent(event);
+        
+        // Clear input after successful processing
+        setTableInput('');
+        setProcessedSets([]); // Clear any processed sets
+      } else {
+        // Manual mode or fallback: just update the processed sets
+        setProcessedSets(formattedSets);
+        if (onSetsExtracted && formattedSets.length > 0) {
+          onSetsExtracted(formattedSets);
+        }
+      }
     } catch (error) {
       console.error('Error processing table input:', error);
+      setErrorMessage('Error parsing the table. Please check the format and make sure it follows the example shown in the placeholder.');
     } finally {
       setIsProcessing(false);
     }
@@ -286,33 +384,283 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
     setIsAddingSet(false);
   };
 
-  // Toggle between image upload and manual entry modes
+  /**
+   * Render a list of extracted sets
+   * @returns {JSX.Element} - The list component
+   */
+  const renderProcessedSets = () => {
+    // Always show UI in manual mode if we're adding a set, even with no sets
+    if (processedSets.length === 0 && !isAddingSet && !isManualEntry) return null;
+    
+    return (
+      <div className="mt-4 bg-black bg-opacity-60 p-3 rounded-md border border-edc-purple">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-edc-blue text-sm font-medium">{isManualEntry ? 'Create a Schedule Manually' : 'Extracted Sets:'}</h3>
+          <div className="flex items-center">
+          <span className="text-xs text-edc-pink mr-2">{processedSets.length} sets found</span>
+          <button 
+            onClick={() => {
+              setProcessedSets([]);
+              // Clear the sets at parent level too
+              onSetsExtracted([]);
+              setIsAddingSet(false);
+              setEditingSet(null);
+              setTableInput('');
+            }}
+            className="text-red-400 hover:text-red-300 text-xs font-medium"
+            title="Discard Sets"
+          >
+            Discard
+          </button>
+        </div>
+        </div>
+        
+        <div className="max-h-48 overflow-y-auto">
+          {processedSets.map((set, index) => {
+            // Format the time for display
+            const date = new Date(set.start);
+            let hours = date.getHours();
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            
+            // Convert to 12-hour format
+            hours = hours % 12;
+            hours = hours ? hours : 12; // Convert 0 to 12
+            const formattedTime = `${hours}:${minutes} ${ampm}`;
+            
+            // Check if this set is being edited
+            const isEditing = editingSet !== null && editingSet.index === index;
+            
+            return (
+              <div key={index} className={`group ${index !== processedSets.length - 1 ? 'border-b border-edc-purple/10' : ''}`}>
+                {isEditing ? (
+                  <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2" ref={editFormRef}>
+                    <input 
+                      type="text" 
+                      placeholder="Artist"
+                      value={editingSet.artist}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        setEditingSet({...editingSet, artist: newValue, errors: {...(editingSet.errors || {}), artist: !newValue.trim()}});
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveSetChanges();
+                        }
+                      }}
+                      className={`bg-transparent ${editingSet.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
+                    />
+                    <div className="text-white text-center">
+                      <input 
+                        type="time"
+                        value={editingSet.time}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setEditingSet({...editingSet, time: newValue, errors: {...(editingSet.errors || {}), time: !newValue}});
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveSetChanges();
+                          }
+                        }}
+                        className={`bg-transparent ${editingSet.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
+                        style={{
+                          appearance: 'none',
+                          '-webkit-appearance': 'none',
+                          '-moz-appearance': 'textfield'
+                        }}
+                      />
+                    </div>
+                    <div className="text-edc-blue flex items-center">
+                      <input 
+                        type="text" 
+                        placeholder="Stage"
+                        value={editingSet.stage}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setEditingSet({...editingSet, stage: newValue, errors: {...(editingSet.errors || {}), stage: !newValue.trim()}});
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveSetChanges();
+                          }
+                        }}
+                        className={`bg-transparent ${editingSet.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
+                      />
+                      <div className="flex shrink-0 ml-auto">
+                        <button 
+                          onClick={saveSetChanges}
+                          className="text-edc-purple hover:text-edc-blue mx-1"
+                          title="Save Changes"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        </button>
+                        <button 
+                          onClick={() => setEditingSet(null)}
+                          className="text-red-400 hover:text-red-300 ml-1"
+                          title="Cancel"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 text-sm py-2">
+                    <div className="text-edc-pink font-medium truncate">{set.artist}</div>
+                    <div className="text-white">{formattedTime}</div>
+                    <div className="text-edc-blue truncate flex justify-between items-center">
+                      <span className="truncate flex-1 text-center">{set.stage}</span>
+                      <div className="flex">
+                        <button
+                          onClick={() => setEditingSet({
+                            index,
+                            artist: set.artist,
+                            stage: set.stage,
+                            time: formatTimeForInput(new Date(set.start))
+                          })}
+                          className="text-edc-purple hover:text-edc-blue ml-1 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                          title="Edit Set"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => deleteSet(index)}
+                          className="text-red-400 hover:text-red-300 ml-1 opacity-0 group-hover:opacity-100 hover:opacity-100"
+                          title="Delete Set"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m6-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        
+        {/* Add Set button or add form at bottom for better UX */}
+        {isAddingSet ? (
+          <div className="mt-3 border-t border-edc-purple/20 pt-2" ref={addFormRef}>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                addNewSet();
+              }} className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 group">
+                <input 
+                  type="text" 
+                  placeholder="Artist"
+                  value={tempNewSet?.artist || ''}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setTempNewSet({
+                      ...tempNewSet,
+                      artist: newValue, 
+                      errors: {...(tempNewSet?.errors || {}), artist: !newValue.trim()}
+                    });
+                  }}
+                  className={`bg-transparent ${tempNewSet?.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
+                />
+                <div className="text-white text-center">
+                  <input 
+                    type="time"
+                    value={tempNewSet?.time || ''}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setTempNewSet({
+                        ...tempNewSet,
+                        time: newValue, 
+                        errors: {...(tempNewSet?.errors || {}), time: !newValue}
+                      });
+                    }}
+                    className={`bg-transparent ${tempNewSet?.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
+                    style={{
+                      appearance: 'none',
+                      '-webkit-appearance': 'none',
+                      '-moz-appearance': 'textfield'
+                    }}
+                  />
+                </div>
+                <div className="text-edc-blue flex items-center">
+                  <input 
+                    type="text" 
+                    placeholder="Stage"
+                    value={editingSet.stage}
+                    onChange={(e) => {
+                      const newValue = e.target.value;
+                      setEditingSet({...editingSet, stage: newValue, errors: {...(editingSet.errors || {}), stage: !newValue.trim()}});
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        saveSetChanges();
+                      }
+                    }}
+                    className={`bg-transparent ${editingSet.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
+                  />
+                  <div className="flex shrink-0 ml-auto">
+                    <button 
+                      onClick={saveSetChanges}
+                      className="text-edc-purple hover:text-edc-blue mx-1"
+                      title="Save Changes"
+                      <button 
+                        data-add-set-button="manual"
+                        onClick={() => {
+                          setIsAddingSet(true);
+                          setTempNewSet({
+                            artist: '',
+                            stage: '',
+                            time: '',
+                            errors: {}
+                          });
+                        }}
+                        className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
+                        title="Add Set"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add Set
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            };
+
+  // Toggle between AI parser and manual entry modes
   const toggleEntryMode = useCallback(() => {
     // Clear sets when toggling modes
     setProcessedSets([]);
-    onSetsExtracted([]);
-    setIsAddingSet(false);
     setEditingSet(null);
+    setTempNewSet(null);
+    setIsAddingSet(false);
+    setTableInput('');
     
-    // Toggle the mode
     const newMode = !isManualEntry;
     setIsManualEntry(newMode);
     
-    // If switching to manual mode, automatically start adding a set
+    // If switching to manual mode, start with the add set form
     if (newMode) {
       setIsAddingSet(true);
-    }
-    
-    // Reset the file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = null;
     }
     
     // Notify parent component
     if (onToggleMode) {
       onToggleMode(newMode);
     }
-  }, [isManualEntry, onSetsExtracted, onToggleMode]);
+  }, [isManualEntry, onToggleMode]);
   
   // Expose toggle function to parent via ref
   useEffect(() => {
@@ -347,54 +695,98 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
     <div className="space-y-4">
       
       {!isManualEntry && (
-        <div className="space-y-3">
-          <div className="relative rounded-lg border border-dashed border-edc-purple/40 bg-black/40 p-4 text-center hover:border-edc-pink/50 transition-all duration-200 cursor-pointer hover:bg-black/50">
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleImageUpload}
-              ref={fileInputRef}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-            />
-            <div className="flex flex-col items-center justify-center py-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-edc-purple/70 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <p className="text-xs text-white/50 mb-1 tracking-wide">Drag and drop festival schedule screenshots or click to browse</p>
-              <p className="text-xs text-red-400/80 mt-1">Note: Image processing requires a valid OpenAI API key to work</p>
+        <>
+          <div className="space-y-3">
+            <div className="space-y-3">
+              <div className="bg-black/40 border border-edc-purple/40 rounded-lg p-4">
+                <h3 className="text-edc-blue text-sm font-medium mb-4">AI Set Parser</h3>
+                
+                <div className="flex flex-col space-y-3">
+                  {/* Step 1: Get data */}
+                  <div className="flex items-center space-x-2">
+                    <div className="bg-edc-blue/60 text-white text-xs font-medium rounded-full w-5 h-5 flex items-center justify-center">1</div>
+                    <span className="text-white/80 text-xs">Get schedule</span>
+                    <a 
+                      href="https://chatgpt.com/g/g-68655cca11a8819199c988aa0d95c3c4-music-festival-schedule-parser" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="bg-edc-purple/80 text-white px-3 py-1 rounded-md hover:bg-edc-purple transition-colors text-xs font-medium"
+                    >
+                      GPT Schedule Parser
+                    </a>
+                    <details className="group inline-block">
+                      <summary className="cursor-pointer text-edc-pink hover:text-edc-purple text-xs">No ChatGPT account?</summary>
+                      <div className="absolute mt-1 p-2 bg-black/60 border border-edc-purple/30 rounded text-xs text-white/80 whitespace-pre-wrap max-h-36 overflow-y-auto max-w-md z-10">
+Extract all festival schedule entries with artist name, start time, and stage name from the uploaded image(s). Return only a markdown table in this format:
+
+| Artist | Start Time | Stage Name |
+
+Do not include duplicates across screenshots.
+If the image isn't readable or doesn't show a valid schedule, respond only with:
+"I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
+                      </div>
+                    </details>
+                  </div>
+                  
+                  {/* Step 2: Paste table */}
+                  <div className="flex items-start">
+                    <div className="bg-edc-blue/60 text-white text-xs font-medium rounded-full w-5 h-5 flex items-center justify-center mt-1 mr-2">2</div>
+                    <div className="flex-1">
+                      <div className="flex justify-between mb-1">
+                        <span className="text-white/80 text-xs">Paste table here</span>
+                        <button
+                          onClick={() => setTableInput('')}
+                          className="text-red-400 hover:text-red-300 text-xs"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <textarea
+                        value={tableInput}
+                        onChange={(e) => setTableInput(e.target.value)}
+                        placeholder={`Example format:
+| Artist        | Start Time | Stage Name    |
+| ------------- | ---------- | ------------- |
+| Subtronics    | 10:00 PM   | Main Stage    |
+| Martin Garrix | 11:20 PM   | Kinetic Grass |
+`}
+                        className="w-full h-32 bg-transparent border border-edc-purple/30 rounded text-white text-sm p-3 resize-none focus:outline-none focus:border-edc-pink/50 placeholder-white/40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      
-      {/* In manual mode, always show the Add Set button which will be rendered in the sets list */}
-      
-      {isProcessing && (
-        <div className="mb-4">
-          <div className="flex items-center mb-1">
-            <div className="w-full bg-black rounded-full h-3 mr-2 border border-edc-purple/30 overflow-hidden">
-              <div 
-                className="bg-gradient-to-r from-edc-purple to-edc-pink h-full rounded-full transition-all duration-300 ease-out"
-                style={{ width: `${progress}%` }}
-              ></div>
+          
+          {/* Error message display */}
+          {errorMessage && (
+            <div className="mt-2 bg-red-900/60 border border-red-500/50 p-3 rounded-md relative">
+              <div className="flex items-start">
+                <div className="text-red-400 text-sm pr-6">{errorMessage}</div>
+                <button 
+                  onClick={() => setErrorMessage('')}
+                  className="absolute top-2 right-2 text-red-400 hover:text-red-300"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
-            <span className="text-edc-pink text-xs font-medium">{progress}%</span>
+          )}
+          
+          {/* Moved Add Schedule button outside the nested divs */}
+          <div className="flex justify-center mt-4">
+            <button
+              onClick={processTableInput}
+              disabled={!tableInput.trim() || isProcessing}
+              className="bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20 disabled:opacity-50 disabled:bg-gray-700 text-white text-sm font-medium py-3 px-8 rounded-md transition-all duration-200 w-1/3"
+            >
+              {isProcessing ? 'Processing...' : 'Add Schedule'}
+            </button>
           </div>
-          <div className="flex items-center text-edc-purple text-xs">
-            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-edc-pink" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <span>Processing festival schedule, extracting set times...</span>
-          </div>
-        </div>
-      )}
-      
-      {error && (
-        <div className="text-red-500 text-sm bg-red-100 p-2 rounded-md mb-4">
-          {error}
-        </div>
+        </>
       )}
       
       {renderProcessedSets()}

@@ -10,7 +10,7 @@ const findTimeGaps = (sets) => {
   const sortedSets = [...sets].sort((a, b) => {
     try {
       return new Date(a.start) - new Date(b.start);
-    } catch (e) {
+    } catch {
       return 0;
     }
   });

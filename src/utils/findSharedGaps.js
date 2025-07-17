@@ -55,7 +55,7 @@ const findSharedGaps = (schedules) => {
   // Find sets that appear in at least 2 schedules (exact matches - same artist, stage, and time)
   const commonSets = allSets.filter(set => set.scheduleNames.length >= 2);
   
-  console.log('Common sets:', commonSets.length);
+  
   
   // Sort sets by start time
   commonSets.sort((a, b) => {
@@ -144,9 +144,10 @@ const findSharedGaps = (schedules) => {
     }
   });
   
-  // If we don't have enough meetup times from common artists,
-  // find additional general gaps between schedules
-  if (meetupGaps.length < 2) {
+  // Only return gaps based on common sets
+  /*
+  // Disabling the general gap finder logic as it was creating unwanted meetup times
+  if (false) {
     // Find gaps for each schedule
     const scheduleGaps = [];
     
@@ -280,7 +281,10 @@ const findSharedGaps = (schedules) => {
     return timeA - timeB;
   });
   
-  // Limit to a reasonable number of meetup options
+  // Remove the artificial limit and close the disabled code block
+  */
+  
+  // Return only the valid meetup times based on common sets
   return meetupGaps.slice(0, 8);
 };
 

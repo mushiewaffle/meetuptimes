@@ -607,37 +607,37 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                     </svg>
-                  </button>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-center mt-3">
+                      <button 
+                        data-add-set-button="manual"
+                        onClick={() => {
+                          setIsAddingSet(true);
+                          setTempNewSet({
+                            artist: '',
+                            stage: '',
+                            time: '',
+                            errors: {}
+                          });
+                        }}
+                        className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
+                        title="Add Set"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                        </svg>
+                        Add Set
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex justify-center mt-3">
-            <button 
-              data-add-set-button="manual"
-              onClick={() => {
-                setIsAddingSet(true);
-                setTempNewSet({
-                  artist: '',
-                  stage: '',
-                  time: '',
-                  errors: {}
-                });
-              }}
-              className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
-              title="Add Set"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Set
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
+              );
+            };
 
   // Toggle between AI parser and manual entry modes
   const toggleEntryMode = useCallback(() => {
@@ -717,17 +717,13 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                     <details className="group inline-block">
                       <summary className="cursor-pointer text-edc-pink hover:text-edc-purple text-xs">No ChatGPT account?</summary>
                       <div className="absolute mt-1 p-2 bg-black/60 border border-edc-purple/30 rounded text-xs text-white/80 whitespace-pre-wrap max-h-36 overflow-y-auto max-w-md z-10">
-I have a screenshot of a music festival schedule. Extract the information into a clean markdown table exactly in this order:
+Extract all festival schedule entries with artist name, start time, and stage name from the uploaded image(s). Return only a markdown table in this format:
 
 | Artist | Start Time | Stage Name |
-|--------|------------|-----------|
-| [artist name] | [time] | [stage name] |
 
-- Only include entries clearly showing an artist name, start time, and stage name.
-- If the image doesn't clearly contain a readable festival schedule, reply exactly with: 
+Do not include duplicates across screenshots.
+If the image isn't readable or doesn't show a valid schedule, respond only with:
 "I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
-
-Do not add extra explanations—just provide the markdown table.
                       </div>
                     </details>
                   </div>

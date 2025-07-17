@@ -56,7 +56,9 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
       // Also handle click-away for adding new set
       if (isAddingSet && addFormRef.current && !addFormRef.current.contains(event.target)) {
         // Only cancel if the click wasn't on any "add set" button
+        // Check if clicked element or any of its parents has data-add-set-button attribute
         const clickedOnAddButton = event.target.closest('[data-add-set-button]');
+        
         if (!clickedOnAddButton) {
           setIsAddingSet(false);
           setTempNewSet(null);
@@ -391,48 +393,25 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
     if (processedSets.length === 0 && !isAddingSet && !isManualEntry) return null;
     
     return (
-      <div className="mt-4 bg-black bg-opacity-60 p-3 rounded-md border border-edc-purple">
-        <div className="flex justify-between items-center mb-2">
-          <h3 className="text-edc-blue text-sm font-medium">{isManualEntry ? 'Create a Schedule Manually' : 'Extracted Sets:'}</h3>
-          <div className="flex items-center">
-          <span className="text-xs text-edc-pink mr-2">{processedSets.length} sets found</span>
-          <button 
-            onClick={() => {
-              setProcessedSets([]);
-              // Clear the sets at parent level too
-              onSetsExtracted([]);
-              setIsAddingSet(false);
-              setEditingSet(null);
-              setTableInput('');
-            }}
-            className="text-red-400 hover:text-red-300 text-xs font-medium"
-            title="Discard Sets"
-          >
-            Discard
-          </button>
-        </div>
-        </div>
+      <div className="mt-6">
+        <h3 className="text-white text-sm font-medium mb-3">Extracted Sets ({processedSets.length})</h3>
         
-        <div className="max-h-48 overflow-y-auto">
+        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
           {processedSets.map((set, index) => {
-            // Format the time for display
-            const date = new Date(set.start);
-            let hours = date.getHours();
-            const minutes = date.getMinutes().toString().padStart(2, '0');
-            const ampm = hours >= 12 ? 'PM' : 'AM';
-            
-            // Convert to 12-hour format
-            hours = hours % 12;
-            hours = hours ? hours : 12; // Convert 0 to 12
-            const formattedTime = `${hours}:${minutes} ${ampm}`;
-            
-            // Check if this set is being edited
-            const isEditing = editingSet !== null && editingSet.index === index;
+            const formattedTime = formatTime(set.start);
+            const isEditing = editingSet && editingSet.index === index;
             
             return (
               <div key={index} className={`group ${index !== processedSets.length - 1 ? 'border-b border-edc-purple/10' : ''}`}>
                 {isEditing ? (
-                  <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2" ref={editFormRef}>
+                  <form 
+                    ref={editFormRef}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveSetChanges();
+                    }} 
+                    className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 group"
+                  >
                     <input 
                       type="text" 
                       placeholder="Artist"
@@ -440,6 +419,14 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                       onChange={(e) => {
                         const newValue = e.target.value;
                         setEditingSet({...editingSet, artist: newValue, errors: {...(editingSet.errors || {}), artist: !newValue.trim()}});
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          setEditingSet(null);
+                        } else if (e.key === 'Enter') {
+                          e.preventDefault();
+                          saveSetChanges();
+                        }
                       }}
                       className={`bg-transparent ${editingSet.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
                     />
@@ -450,6 +437,14 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                         onChange={(e) => {
                           const newValue = e.target.value;
                           setEditingSet({...editingSet, time: newValue, errors: {...(editingSet.errors || {}), time: !newValue}});
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setEditingSet(null);
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveSetChanges();
+                          }
                         }}
                         className={`bg-transparent ${editingSet.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
                         style={{
@@ -468,11 +463,19 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                           const newValue = e.target.value;
                           setEditingSet({...editingSet, stage: newValue, errors: {...(editingSet.errors || {}), stage: !newValue.trim()}});
                         }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setEditingSet(null);
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            saveSetChanges();
+                          }
+                        }}
                         className={`bg-transparent ${editingSet.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
                       />
                       <div className="flex shrink-0 ml-auto">
                         <button 
-                          onClick={saveSetChanges}
+                          type="submit"
                           className="text-edc-purple hover:text-edc-blue mx-1"
                           title="Save Changes"
                         >
@@ -481,6 +484,7 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                           </svg>
                         </button>
                         <button 
+                          type="button"
                           onClick={() => setEditingSet(null)}
                           className="text-red-400 hover:text-red-300 ml-1"
                           title="Cancel"
@@ -491,7 +495,7 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                         </button>
                       </div>
                     </div>
-                  </div>
+                  </form>
                 ) : (
                   <div className="grid grid-cols-3 gap-2 text-sm py-2">
                     <div className="text-edc-pink font-medium truncate">{set.artist}</div>
@@ -529,113 +533,146 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
               </div>
             );
           })}
-        </div>
         
-        {/* Add Set button or add form at bottom for better UX */}
-        {isAddingSet ? (
-          <div className="mt-3 border-t border-edc-purple/20 pt-2" ref={addFormRef}>
-              <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 group">
-                <input 
-                  type="text" 
-                  placeholder="Artist"
-                  value={tempNewSet?.artist || ''}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    setTempNewSet({
-                      ...tempNewSet,
-                      artist: newValue, 
-                      errors: {...(tempNewSet?.errors || {}), artist: !newValue.trim()}
-                    });
-                  }}
-                  className={`bg-transparent ${tempNewSet?.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
-                />
-                <div className="text-white text-center">
-                  <input 
-                    type="time"
-                    value={tempNewSet?.time || ''}
-                    onChange={(e) => {
-                      const newValue = e.target.value;
-                      setTempNewSet({
-                        ...tempNewSet,
-                        time: newValue, 
-                        errors: {...(tempNewSet?.errors || {}), time: !newValue}
-                      });
-                    }}
-                    className={`bg-transparent ${tempNewSet?.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
-                    style={{
-                      appearance: 'none',
-                      '-webkit-appearance': 'none',
-                      '-moz-appearance': 'textfield'
-                    }}
-                  />
-                </div>
-              <div className="text-edc-blue flex items-center">
-                <input 
-                  type="text" 
-                  placeholder="Stage"
-                  value={tempNewSet?.stage || ''}
-                  onChange={(e) => {
-                    const newValue = e.target.value;
-                    setTempNewSet({
-                      ...tempNewSet,
-                      stage: newValue, 
-                      errors: {...(tempNewSet?.errors || {}), stage: !newValue.trim()}
-                    });
-                  }}
-                  className={`bg-transparent ${tempNewSet?.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
-                />
-                <div className="flex shrink-0 ml-auto">
-                  <button 
-                    onClick={addNewSet}
-                    className="text-edc-purple hover:text-edc-blue mx-1"
-                    title="Save Set"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setIsAddingSet(false);
-                      setTempNewSet(null);
-                    }}
-                    className="text-red-400 hover:text-red-300 ml-1"
-                    title="Cancel"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="flex justify-center mt-3">
-            <button 
-              data-add-set-button="manual"
-              onClick={() => {
-                setIsAddingSet(true);
-                setTempNewSet({
-                  artist: '',
-                  stage: '',
-                  time: '',
-                  errors: {}
-                });
-              }}
-              className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
-              title="Add Set"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Set
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
+{/* Add Set button or add form at bottom for better UX */}
+{isAddingSet ? (
+<div className="mt-3 border-t border-edc-purple/20 pt-2" ref={addFormRef}>
+<form onSubmit={(e) => {
+e.preventDefault();
+addNewSet();
+}}
+className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 group"
+>
+<input 
+type="text" 
+placeholder="Artist"
+value={tempNewSet?.artist || ''}
+onChange={(e) => {
+const newValue = e.target.value;
+setTempNewSet({
+...tempNewSet,
+artist: newValue, 
+errors: {...(tempNewSet?.errors || {}), artist: !newValue.trim()}
+});
+}}
+onKeyDown={(e) => {
+if (e.key === 'Escape') {
+setTempNewSet(null);
+} else if (e.key === 'Enter') {
+e.preventDefault();
+addNewSet();
+}
+}}
+className={`bg-transparent ${tempNewSet?.errors?.artist ? 'border-b border-red-500' : ''} font-medium text-sm text-edc-pink focus:outline-none focus:border-b focus:border-edc-pink/50 w-full text-center`}
+/>
+<div className="text-white text-center">
+<input 
+type="time"
+value={tempNewSet?.time || ''}
+onChange={(e) => {
+const newValue = e.target.value;
+setTempNewSet({
+...tempNewSet,
+time: newValue, 
+errors: {...(tempNewSet?.errors || {}), time: !newValue}
+});
+}}
+onKeyDown={(e) => {
+if (e.key === 'Escape') {
+setTempNewSet(null);
+} else if (e.key === 'Enter') {
+e.preventDefault();
+addNewSet();
+}
+}}
+className={`bg-transparent ${tempNewSet?.errors?.time ? 'border-b border-red-500' : ''} text-sm text-white focus:outline-none focus:border-b focus:border-white/30 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-inner-spin-button]:hidden [&::-webkit-outer-spin-button]:hidden [&::-webkit-clear-button]:hidden [&::-ms-clear]:hidden w-[90px] text-center mx-auto`}
+style={{
+appearance: 'none',
+'-webkit-appearance': 'none',
+'-moz-appearance': 'textfield'
+}}
+/>
+</div>
+<div className="text-edc-blue flex items-center">
+<input 
+type="text" 
+placeholder="Stage"
+value={tempNewSet?.stage || ''}
+onChange={(e) => {
+const newValue = e.target.value;
+setTempNewSet({
+...tempNewSet,
+stage: newValue, 
+errors: {...(tempNewSet?.errors || {}), stage: !newValue.trim()}
+});
+}}
+onKeyDown={(e) => {
+if (e.key === 'Escape') {
+setTempNewSet(null);
+} else if (e.key === 'Enter') {
+e.preventDefault();
+addNewSet();
+}
+}}
+className={`bg-transparent ${tempNewSet?.errors?.stage ? 'border-b border-red-500' : ''} text-sm text-edc-blue focus:outline-none focus:border-b focus:border-edc-blue/50 w-[70%] text-center`}
+/>
+<div className="flex shrink-0 ml-auto">
+<button 
+type="submit"
+className="text-edc-purple hover:text-edc-blue mx-1"
+title="Save Set"
+>
+<svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+</svg>
+</button>
+<button 
+type="button"
+onClick={() => {
+setIsAddingSet(false);
+setTempNewSet(null);
+}}
+className="text-red-400 hover:text-red-300 ml-1"
+title="Cancel"
+>
+<svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+</svg>
+</button>
+</div>
+</div>
+</form>
+</div>
+) : (
+<div className="flex justify-center mt-3">
+<button 
+data-add-set-button="manual"
+onClick={() => {
+setIsAddingSet(true);
+setTempNewSet({
+artist: '',
+stage: '',
+time: '',
+errors: {}
+});
+}}
+className="bg-edc-blue/20 hover:bg-edc-blue/30 text-edc-blue hover:text-edc-purple text-sm font-medium py-2 px-4 rounded-md flex items-center transition-all duration-200"
+title="Add Set"
+>
+<svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+</svg>
+Add Set
+</button>
+</div>
+)}
+</div>
+);
+};
+
+  // Toggle between AI parser and manual entry modes
+              );
+            };
 
   // Toggle between AI parser and manual entry modes
   const toggleEntryMode = useCallback(() => {
@@ -715,17 +752,13 @@ const FestivalScheduleUploader = ({ onSetsExtracted, onToggleMode, initialManual
                     <details className="group inline-block">
                       <summary className="cursor-pointer text-edc-pink hover:text-edc-purple text-xs">No ChatGPT account?</summary>
                       <div className="absolute mt-1 p-2 bg-black/60 border border-edc-purple/30 rounded text-xs text-white/80 whitespace-pre-wrap max-h-36 overflow-y-auto max-w-md z-10">
-I have a screenshot of a music festival schedule. Extract the information into a clean markdown table exactly in this order:
+Extract all festival schedule entries with artist name, start time, and stage name from the uploaded image(s). Return only a markdown table in this format:
 
 | Artist | Start Time | Stage Name |
-|--------|------------|-----------|
-| [artist name] | [time] | [stage name] |
 
-- Only include entries clearly showing an artist name, start time, and stage name.
-- If the image doesn't clearly contain a readable festival schedule, reply exactly with: 
+Do not include duplicates across screenshots.
+If the image isn't readable or doesn't show a valid schedule, respond only with:
 "I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
-
-Do not add extra explanations—just provide the markdown table.
                       </div>
                     </details>
                   </div>
@@ -794,6 +827,7 @@ Do not add extra explanations—just provide the markdown table.
       {renderProcessedSets()}
     </div>
   );
+};
 };
 
 export default FestivalScheduleUploader;
