@@ -8,14 +8,17 @@
 const findSharedGaps = (schedules) => {
   if (!schedules || schedules.length === 0) return [];
   
-  // Create a unique identifier for each set
+  // Create a unique identifier for each set.
+  // Includes the calendar date so a 5pm Friday set never collides with a 5pm
+  // Saturday set (multi-day festivals like EDC need this).
   const createSetId = (set) => {
     if (!set || !set.artist || !set.start) return null;
     const artist = set.artist.toLowerCase().trim();
     const stage = set.stage ? set.stage.toLowerCase().trim() : 'unknown';
     const date = new Date(set.start);
-    const timeStr = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-    return `${artist}|${stage}|${timeStr}`;
+    const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    return `${artist}|${stage}|${dateStr}T${timeStr}`;
   };
   
   // Find all sets across all schedules with proper tracking of exact duplicates

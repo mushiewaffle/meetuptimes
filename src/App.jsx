@@ -6,8 +6,10 @@ import './App.css';
 // Components
 import FestivalScheduleUploader from './components/FestivalScheduleUploader';
 import VenmoTipJar from './components/VenmoTipJar';
+import EDCPicker from './components/EDCPicker';
 // Import removed - no longer needed
 import findSharedGaps from './utils/findSharedGaps';
+import festivalSchedule from './data/festivalSchedule';
 
 // Add Capacitor imports for native filesystem support
 import { Capacitor } from '@capacitor/core';
@@ -37,27 +39,35 @@ function App() {
   // Parse table input for AI parsing mode
   const parseTableInput = (input) => {
     if (!input.trim()) return [];
-    
+
     const lines = input.trim().split('\n');
     const parsedSets = [];
-    let columnIndices = { artist: 0, time: 1, stage: 2 };
-    
+    // Default column order matches the legacy 3-col GPT prompt; updated below
+    // when a header row is present (handles new 4-col `Day|Artist|Time|Stage`).
+    let columnIndices = { day: -1, artist: 0, time: 1, stage: 2 };
+
+    // Strip markdown link wrapping like [Lu.Re](http://Lu.Re) -> Lu.Re
+    const stripMdLinks = (s) => s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    const dayMap = { fri: 'Fri', friday: 'Fri', sat: 'Sat', saturday: 'Sat', sun: 'Sun', sunday: 'Sun' };
+
     // Process each line
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line || line.startsWith('---')) continue;
-      
+
       // Split by pipe and clean up each cell
       const columns = line.split('|')
         .map(cell => cell.trim())
         .filter(cell => cell.length > 0);
-      
+
       // Check if this is a header row
-      if (i <= 1 && (line.includes('Artist') || line.includes('Time') || line.includes('Stage'))) {
+      if (i <= 1 && (line.includes('Artist') || line.includes('Time') || line.includes('Stage') || line.includes('Day'))) {
         // Determine column positions based on header
         for (let j = 0; j < columns.length; j++) {
           const header = columns[j].toLowerCase();
-          if (header.includes('artist') || header.includes('dj') || header.includes('performer')) {
+          if (header === 'day' || header.startsWith('day')) {
+            columnIndices.day = j;
+          } else if (header.includes('artist') || header.includes('dj') || header.includes('performer')) {
             columnIndices.artist = j;
           } else if (header.includes('time') || header.includes('start')) {
             columnIndices.time = j;
@@ -67,25 +77,28 @@ function App() {
         }
         continue;
       }
-      
+
       // Process data rows
       if (columns.length >= 3) {
-        const artist = columns[columnIndices.artist];
+        const artist = stripMdLinks(columns[columnIndices.artist] || '').trim();
         const timeStr = columns[columnIndices.time];
         const stage = columns[columnIndices.stage];
-        
+        const dayRaw = columnIndices.day >= 0 ? (columns[columnIndices.day] || '').toLowerCase() : '';
+        const day = dayMap[dayRaw] || '';
+
         const time = convertToTimeFormat(timeStr);
-        
+
         if (time && artist && stage) {
           parsedSets.push({
             time,
             artist,
-            stage
+            stage,
+            day, // optional — used by processTableInput to compute the right calendar date
           });
         }
       }
     }
-    
+
     return parsedSets;
   };
   
@@ -135,12 +148,27 @@ function App() {
         return;
       }
       
-      // Convert to the format expected by the schedule (with ISO date strings)
+      // Convert to the format expected by the schedule (with ISO date strings).
+      // When the GPT output includes a Day column, anchor each set to the correct
+      // EDC night so multi-day pastes order correctly. AM hours roll into the
+      // next calendar day (festival-night convention).
+      const NIGHT_BASE = {
+        Fri: { y: 2026, m: 4, d: 15 },
+        Sat: { y: 2026, m: 4, d: 16 },
+        Sun: { y: 2026, m: 4, d: 17 },
+      };
       const formattedSets = parsedSets.map(set => {
         const [hours, minutes] = set.time.split(':').map(Number);
-        const today = new Date();
-        const date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
-        
+        let date;
+        if (set.day && NIGHT_BASE[set.day]) {
+          const base = NIGHT_BASE[set.day];
+          const dayOffset = hours < 12 ? 1 : 0;
+          date = new Date(base.y, base.m, base.d + dayOffset, hours, minutes);
+        } else {
+          const today = new Date();
+          date = new Date(today.getFullYear(), today.getMonth(), today.getDate(), hours, minutes);
+        }
+
         return {
           artist: set.artist,
           stage: set.stage,
@@ -227,6 +255,55 @@ function App() {
     time: '',
     stage: ''
   });
+
+  // EDC picker state
+  // pickerTargetIdx: null = create new schedule from picks, number = merge into that schedule
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerTargetIdx, setPickerTargetIdx] = useState(null);
+
+  const handleOpenPickerForNew = () => {
+    setPickerTargetIdx(null);
+    setPickerOpen(true);
+  };
+
+  const handleOpenPickerForExisting = (scheduleIndex) => {
+    setPickerTargetIdx(scheduleIndex);
+    setPickerOpen(true);
+  };
+
+  const handleEDCPickerSave = (sets) => {
+    setPickerOpen(false);
+    if (pickerTargetIdx === null) {
+      // Smarter default name: first schedule = "Your picks", subsequent =
+      // "Friend 1", "Friend 2", … (matches the typical mental model of "you +
+      // friends" without forcing a naming step on the first add).
+      const scheduleName =
+        schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`;
+      setSchedules([{ name: scheduleName, sets }, ...schedules]);
+    } else {
+      // Merge into the existing schedule, deduped by start+artist+stage
+      const updated = [...schedules];
+      const target = updated[pickerTargetIdx];
+      if (target) {
+        const existing = Array.isArray(target.sets) ? target.sets : [];
+        const seen = new Set(existing.map((s) => `${s.start}|${s.artist}|${s.stage}`));
+        const merged = [...existing];
+        for (const s of sets) {
+          const key = `${s.start}|${s.artist}|${s.stage}`;
+          if (!seen.has(key)) {
+            merged.push(s);
+            seen.add(key);
+          }
+        }
+        merged.sort((a, b) => new Date(a.start) - new Date(b.start));
+        target.sets = merged;
+        setSchedules(updated);
+      }
+    }
+    // Outdated meetup gaps once schedules change
+    setMeetupGaps([]);
+    setMeetupPlan([]);
+  };
   
   // Animation properties for fade-in transitions
   // (Animation handled through CSS classes instead)
@@ -1193,18 +1270,38 @@ function App() {
       if (!time) return '--:-- --';
       const date = typeof time === 'string' ? parseISO(time) : time;
       if (isNaN(date.getTime())) return '--:-- --';
-      
+
       if (formatType === 'HH:mm') {
         // 24-hour format for time input fields
         const hours = date.getHours().toString().padStart(2, '0');
         const minutes = date.getMinutes().toString().padStart(2, '0');
         return `${hours}:${minutes}`;
       }
-      
+
       return format(date, 'h:mm a');
     } catch {
       // Silent error handling for better UX
       return '--:-- --';
+    }
+  };
+
+  // Map a Date back to the festival-night it belongs to (so a 4 AM set on
+  // calendar-day Saturday is labeled as the conclusion of "Friday Night").
+  // Returns 'Fri' | 'Sat' | 'Sun' | null.
+  const getFestivalNight = (time) => {
+    try {
+      if (!time) return null;
+      const date = typeof time === 'string' ? parseISO(time) : time;
+      if (isNaN(date.getTime())) return null;
+      const adj = new Date(date);
+      if (adj.getHours() < 12) adj.setDate(adj.getDate() - 1);
+      const ds = `${adj.getFullYear()}-${String(adj.getMonth() + 1).padStart(2, '0')}-${String(adj.getDate()).padStart(2, '0')}`;
+      if (ds === '2026-05-15') return 'Fri';
+      if (ds === '2026-05-16') return 'Sat';
+      if (ds === '2026-05-17') return 'Sun';
+      return null;
+    } catch {
+      return null;
     }
   };
   
@@ -1291,11 +1388,14 @@ function App() {
     <div className="min-h-screen w-full bg-edc-black bg-festival-pattern bg-cover bg-center py-4 px-2 overflow-x-hidden">
       <div className="max-w-5xl mx-auto w-full">
         <header className="text-center mb-8">
-          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-edc-blue to-edc-pink mb-2">
-            Festival Meetup Times Planner
+          <div className="font-orbitron tracking-[0.3em] text-[10px] sm:text-xs text-edc-blue mb-2">
+            EDC LAS VEGAS 2026 · MAY 15–17
+          </div>
+          <h1 className="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-edc-blue via-edc-purple to-edc-pink mb-2 font-orbitron">
+            EDC 2026
           </h1>
-          <p className="text-edc-purple text-lg">
-            Find the best times to meet up with friends between festival sets
+          <p className="text-edc-purple text-base sm:text-lg">
+            Find sets and meetup times with friends
           </p>
         </header>
         
@@ -1309,7 +1409,11 @@ function App() {
               {/* Centered title with more prominence */}
               <div className="text-center mb-4">
                 <h3 className="text-2xl font-bold text-edc-blue bg-gradient-to-r from-edc-blue to-edc-pink bg-clip-text text-transparent inline-block">
-                  {schedules.length > 0 ? 'All Schedules' : 'Add Your First Schedule'}
+                  {schedules.length === 0
+                    ? 'Get started'
+                    : schedules.length === 1
+                      ? "Now add a friend's schedule"
+                      : 'Schedules'}
                 </h3>
               </div>
                 
@@ -1405,36 +1509,52 @@ function App() {
                             </button>
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Manual Entry Option */}
-                            <button 
+                            {/* Pick from Lineup (the primary, friction-free path) */}
+                            <button
                               onClick={() => {
                                 setShowScheduleOptions(false);
-                                // Create a new empty schedule
-                                addEmptySchedule();
+                                handleOpenPickerForNew();
                               }}
-                              className="bg-black/40 hover:bg-black/60 border border-edc-purple/30 hover:border-edc-purple/60 rounded-lg p-4 flex flex-col items-center transition-all"
+                              className="bg-edc-blue/10 hover:bg-edc-blue/20 border-2 border-edc-blue/50 hover:border-edc-blue rounded-lg p-4 flex flex-col items-center transition-all relative"
                             >
+                              <span className="absolute top-2 right-2 text-[9px] uppercase tracking-widest text-edc-blue/80 font-bold">Recommended</span>
                               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-edc-blue mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                               </svg>
-                              <span className="text-edc-blue font-medium">Manual Entry</span>
-                              <span className="text-white/60 text-xs mt-1">Create an empty schedule and add sets one by one</span>
+                              <span className="text-edc-blue font-bold">Pick from Lineup</span>
+                              <span className="text-white/60 text-xs mt-1 text-center">Tap sets from EDC's 425-artist lineup. ~30 sec.</span>
                             </button>
-                            
-                            {/* AI Parsing Option */}
-                            <button 
+
+                            {/* From Insomniac Screenshot — uses AI (custom GPT or
+                                copy-paste prompt) to convert a screenshot into a
+                                table the app can read. The visual flow communicates
+                                the 3 steps: 📷 photo → 🤖 AI → 📋 paste. */}
+                            <button
                               onClick={() => {
-                                // Show GPT subscription options instead of AI parsing mode directly
                                 setShowGPTSubscriptionOptions(true);
                                 setHasGPTSubscription(null);
                               }}
                               className="bg-black/40 hover:bg-black/60 border border-edc-purple/30 hover:border-edc-purple/60 rounded-lg p-4 flex flex-col items-center transition-all"
                             >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-edc-pink mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                              </svg>
-                              <span className="text-edc-pink font-medium">AI Parsing</span>
-                              <span className="text-white/60 text-xs mt-1">Use AI to parse from schedule screenshots</span>
+                              {/* Visual flow: camera → AI sparkle → clipboard */}
+                              <div className="flex items-center gap-1.5 mb-2 text-edc-pink">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                  <circle cx="12" cy="13" r="3.5" strokeWidth={1.5} />
+                                </svg>
+                                <span className="text-xs font-bold tracking-wider">→</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 3l1.5 4L18 8.5l-4.5 1.5L12 14l-1.5-4L6 8.5 10.5 7 12 3zM5 16l.75 2L7.5 18.75 5.75 19.5 5 21l-.75-1.5L2.5 18.75l1.75-.75L5 16zM19 14l1 2.5 2.5 1-2.5 1L19 21l-1-2.5L15.5 17.5 18 16.5 19 14z" />
+                                </svg>
+                                <span className="text-xs font-bold tracking-wider">→</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                </svg>
+                              </div>
+                              <span className="text-edc-pink font-bold">From Insomniac Screenshot</span>
+                              <span className="text-white/60 text-xs mt-1 text-center leading-snug">
+                                Send your schedule photo to ChatGPT, it converts it to a table, then paste here.
+                              </span>
                             </button>
                           </div>
                           
@@ -1490,18 +1610,35 @@ function App() {
                                   </div>
                                 </div>
                               ) : (
-                                // Non-premium user - Show prompt copy
+                                // Non-premium user — copy-paste prompt for any AI.
+                                // Includes the Day column so multi-night EDC schedules
+                                // anchor to the correct festival night when imported.
                                 <div className="relative space-y-3">
                                   <p className="text-white/80 text-xs">
-                                    Copy + paste prompt with schedule screenshot(s) to AI of your choice
+                                    Copy this prompt + paste with your schedule screenshot(s) into ChatGPT (or any AI):
                                   </p>
-                                  <div 
+                                  <div
                                     className="bg-black/40 border border-edc-purple/30 rounded p-3 text-white/80 text-xs cursor-pointer hover:border-edc-pink/50 transition-colors"
                                     onClick={() => {
                                       navigator.clipboard.writeText(
-                                        `I have a screenshot of a music festival schedule. Extract the information into a clean markdown table exactly in this order:\n\n| Artist | Start Time | Stage Name |\n|--------|------------|-------------|\n| [artist name] | [time] | [stage name] |\n\n- Only include entries clearly showing an artist name, start time, and stage name.\n- If the image doesn't clearly contain a readable festival schedule, reply exactly with: "I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."\n\nDo not add extra explanations—just provide the markdown table.`
+                                        `I have a screenshot of an EDC Las Vegas 2026 schedule. Extract the information into a clean markdown table exactly in this order:
+
+| Day | Artist | Start Time | Stage Name |
+|-----|--------|------------|-------------|
+| [Fri/Sat/Sun] | [artist name] | [time] | [stage name] |
+
+Rules:
+- Day: use exactly one of \`Fri\`, \`Sat\`, or \`Sun\`. Read it from the row text (e.g., "Sunday - 4:00 AM" → \`Sun\`) or from a section header in the screenshot. Use the literal day shown — do not shift late-night sets to the previous day. If the day is genuinely not visible anywhere in the image, leave the Day cell blank rather than guessing.
+- Artist: keep the name exactly as shown, including any suffix in parentheses (e.g., "(Sunrise Set)", "(b2b ArtistX)"). Do NOT wrap artist names in markdown links — output \`Lu.Re\`, never \`[Lu.Re](http://Lu.Re)\`.
+- Start Time: keep the original 12-hour AM/PM format from the screenshot.
+- Stage Name: keep as shown, exact spelling and casing.
+- Only include entries clearly showing an artist name, start time, and stage name.
+- If multiple screenshots are uploaded, merge them into one combined table sorted by Day (Fri → Sat → Sun), then by Start Time within each day.
+- Do not include duplicates across screenshots.
+- If the image doesn't clearly contain a readable festival schedule, reply exactly with: "I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
+
+Do not add extra explanations—just provide the markdown table.`,
                                       );
-                                      // Show a temporary copied message
                                       setCopiedPrompt(true);
                                       setTimeout(() => setCopiedPrompt(false), 2000);
                                     }}
@@ -1511,13 +1648,14 @@ function App() {
                                       <span className="text-edc-pink text-xs">{copiedPrompt ? 'Copied!' : 'Click to copy'}</span>
                                     </div>
                                     <div className="text-white/60 whitespace-pre-line text-xs">
-Extract all festival schedule entries with artist name, start time, and stage name from the uploaded image(s). Return only a markdown table in this format:
+{`Extract every set from the uploaded schedule screenshot(s) into one markdown table:
 
-| Artist | Start Time | Stage Name |
+| Day | Artist | Start Time | Stage Name |
 
-Do not include duplicates across screenshots.
-If the image isn't readable or doesn't show a valid schedule, respond only with:
-"I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."
+Day must be Fri / Sat / Sun (read it directly from the screenshot — don't shift late-night sets). Keep parentheticals like "(Sunrise Set)". Do not wrap artist names in markdown links. Merge multiple screenshots into one sorted table; skip duplicates.
+
+If the image isn't readable, reply exactly:
+"I couldn't find a readable festival schedule in this image. Please upload a clearer screenshot."`}
                                     </div>
                                   </div>
                                 </div>
@@ -1540,7 +1678,7 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
                               <textarea
                                 value={tableInput}
                                 onChange={(e) => setTableInput(e.target.value)}
-                                placeholder={`Example format:\n| Artist        | Start Time | Stage Name    |\n| ------------- | ---------- | ------------- |\n| Subtronics    | 10:00 PM   | Main Stage    |\n| Martin Garrix | 11:20 PM   | Kinetic Grass |`}
+                                placeholder={`Example format:\n| Day | Artist                | Start Time | Stage Name    |\n| --- | --------------------- | ---------- | ------------- |\n| Fri | Subtronics            | 10:00 PM   | Basspod       |\n| Sat | Martin Garrix         | 11:20 PM   | Kinetic Field |\n| Sun | Lu.Re                 | 4:30 AM    | Stereo Bloom  |`}
                                 className="w-full h-32 bg-transparent border border-edc-purple/30 rounded text-white text-sm p-3 resize-none focus:outline-none focus:border-edc-pink/50 placeholder-white/40"
                               />
                             </div>
@@ -1905,50 +2043,24 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
                                 </div>
                             )}
                             
-                            {/* Smaller, less intrusive Add Set button */}
+                            {/* Add more sets — opens the EDC picker for this schedule
+                                rather than the legacy free-text form (since EDC is hardcoded,
+                                tap-from-list is faster and avoids typos). */}
                             {isAddingSetToSchedule !== idx && (
                               <button
                                 data-add-set-button={idx}
                                 onClick={(e) => {
-                                  e.stopPropagation(); // Prevent event bubbling
-                                  e.preventDefault(); // Prevent default behavior
-                                  
-                                  
-                                  
-                                  // Direct approach similar to manual entry mode
-                                  setIsAddingSetToSchedule(idx);
-                                  setEditingScheduleIndex(null);
-                                  setEditingSetInfo(null);
-                                  
-                                  // Reset form values and errors when starting to add a new set
-                                  setTempNewSetValues({
-                                    artist: '',
-                                    time: '',
-                                    stage: ''
-                                  });
-                                  setFormErrors({});
-                                  
-                                  // Ensure sets array exists in the schedule
-                                  const updatedSchedules = JSON.parse(JSON.stringify(schedules));
-                                  if (!updatedSchedules[idx]) {
-                                    console.error(`Schedule at index ${idx} does not exist`);
-                                    return;
-                                  }
-                                  
-                                  // Initialize sets array if needed
-                                  if (!Array.isArray(updatedSchedules[idx].sets)) {
-                                    
-                                    updatedSchedules[idx].sets = [];
-                                    setSchedules(updatedSchedules);
-                                  }
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  handleOpenPickerForExisting(idx);
                                 }}
-                                className="mt-2 text-xs text-edc-blue hover:text-edc-purple flex items-center mx-auto px-2 py-0.5 bg-edc-blue/10 hover:bg-edc-blue/15 rounded-sm opacity-80 hover:opacity-100 transition-all"
-                                title="Add Set"
+                                className="mt-2 text-xs text-edc-blue hover:text-edc-purple flex items-center mx-auto px-3 py-1 bg-edc-blue/10 hover:bg-edc-blue/15 rounded-md transition-all"
+                                title="Add more sets from the EDC lineup"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
-                                Add Set
+                                Add sets from lineup
                               </button>
                             )}
                             
@@ -1990,31 +2102,42 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
       
 
       
-      {/* We removed modals in favor of inline editing */}
-      
-        {(schedules.length < 2 || noGapsFound) && (
-          <div className="text-center mb-3 py-1.5 px-2 bg-red-900/20 border border-red-500/30 rounded-md">
-            <div className="flex items-center justify-center">
-              <span className="text-red-300 text-xs font-medium">
-                {schedules.length < 2
-                  ? (schedules.length === 0 
-                    ? 'Add at least 2 schedules to find meetup times' 
-                    : 'Add at least 1 more schedule to find meetup times')
-                  : 'No common sets found between schedules. Try adding shared sets between schedules.'}
-              </span>
-            </div>
+      {/* Empty-state hint for first-time users — only shown when nothing has
+          been added yet, so the screen stays clean instead of front-loading a
+          disabled button + red warning the user can't act on. */}
+      {schedules.length === 0 && !showScheduleOptions && (
+        <div className="mt-2 mb-2 text-center text-xs text-white/50 px-2 leading-relaxed">
+          <span className="text-edc-blue">1.</span> Add your sets ·{' '}
+          <span className="text-edc-pink">2.</span> Add a friend's sets ·{' '}
+          <span className="text-edc-purple">3.</span> See when you can meet up
+        </div>
+      )}
+
+      {/* "Need another schedule" hint or "no common sets" warning — only after
+          there's at least one schedule, so it's actionable. */}
+      {schedules.length > 0 && (schedules.length < 2 || noGapsFound) && (
+        <div className="text-center mb-3 py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
+          <div className="flex items-center justify-center">
+            <span className="text-edc-purple text-xs font-medium">
+              {schedules.length < 2
+                ? "Add a friend's schedule above to find your meetup times"
+                : 'No overlap yet — try adding a shared set in both schedules.'}
+            </span>
           </div>
-        )}
-        
+        </div>
+      )}
+
+      {/* Find Meetup Times — only render once 2+ schedules exist. Hidden in the
+          empty state to keep the first screen uncluttered. */}
+      {schedules.length >= 2 && (
         <button
           onClick={findMeetupGaps}
-          disabled={schedules.length < 2}
-          className={`w-full py-3 rounded-md text-white font-medium transition-all ${schedules.length >= 2 
-            ? 'bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 transition-opacity animate-glow' 
-            : 'bg-gray-700 cursor-not-allowed opacity-50'}`}
+          disabled={noGapsFound}
+          className="w-full py-3 rounded-md text-white font-bold text-base font-orbitron tracking-wider transition-all bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 animate-glow disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Find Meetup Times
+          Find Meetup Times →
         </button>
+      )}
             </div>
             {/* Tip Jar removed from here and moved to appear on all pages */}
           </div>
@@ -2057,11 +2180,16 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
                 >
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="font-bold text-edc-pink flex">
+                      <p className="font-bold text-edc-pink flex flex-wrap items-baseline gap-x-2">
+                        {getFestivalNight(gap.start) && (
+                          <span className="text-[10px] font-orbitron tracking-widest text-edc-blue uppercase">
+                            {getFestivalNight(gap.start)} Night
+                          </span>
+                        )}
                         <span className="whitespace-nowrap">{formatTime(gap.start)} - {formatTime(gap.end)}</span>
-                        <span className="ml-2 text-white text-sm font-normal whitespace-nowrap">({formatDuration(gap.start, gap.end)})</span>
+                        <span className="text-white text-sm font-normal whitespace-nowrap">({formatDuration(gap.start, gap.end)})</span>
                       </p>
-                      
+
                       {gap.beforeCommonArtist && (
                         <p className="text-green-400 text-sm flex items-center">
                           {gap.isRecommended && <span className="mr-1">✓</span>}
@@ -2156,8 +2284,13 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
                     <div className="flex justify-between items-center pl-4 pt-0">
                       <h3 className="text-edc-blue/90 font-medium text-lg mt-0 pt-0">{`#${idx + 1}: Before ${meetup.beforeCommonArtist || 'Next Artist'} @ ${meetup.beforeStage || 'Unknown Stage'}`}</h3>
                     </div>
-                  
-                    <div className="flex items-center pl-4 mt-0 pt-0 pb-0">
+
+                    <div className="flex items-center pl-4 mt-0 pt-0 pb-0 gap-2 flex-wrap">
+                      {getFestivalNight(meetup.start) && (
+                        <span className="text-[10px] font-orbitron tracking-widest text-edc-blue uppercase">
+                          {getFestivalNight(meetup.start)} Night
+                        </span>
+                      )}
                       <p className="text-edc-purple/90 mb-0">
                         {formatTime(meetup.start)} - {formatTime(meetup.end)}
                         <span className="text-white/70 text-xs ml-2">({formatDuration(meetup.start, meetup.end)})</span>
@@ -2265,11 +2398,11 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
         {/* Footer section with Tip Jar and About Me */}
         <div className="text-center mt-6 mb-4 border-t border-edc-purple/10 pt-4">
           <VenmoTipJar />
-          
+
           <div className="-mt-1 opacity-70 hover:opacity-100 transition-opacity">
-            <a 
-              href="https://linktr.ee/mushiewaffle" 
-              target="_blank" 
+            <a
+              href="https://linktr.ee/mushiewaffle"
+              target="_blank"
               rel="noopener noreferrer"
               className="text-[10px] text-white/70 hover:text-edc-pink/90 transition-colors"
             >
@@ -2278,6 +2411,18 @@ If the image isn't readable or doesn't show a valid schedule, respond only with:
           </div>
         </div>
       </div>
+
+      {/* EDC roster picker — modal for tap-from-list set selection */}
+      <EDCPicker
+        open={pickerOpen}
+        title={
+          pickerTargetIdx === null
+            ? 'Pick your sets'
+            : `Add to ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
+        }
+        onSave={handleEDCPickerSave}
+        onCancel={() => setPickerOpen(false)}
+      />
     </div>
   );
 }

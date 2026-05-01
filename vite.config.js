@@ -14,9 +14,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt', 'icons/*.png'],
       manifest: {
-        name: 'Festival Meetup Times Planner',
-        short_name: 'Festival Meetup Times',
-        description: 'App for coordinating meetups during music festivals',
+        name: 'EDC 2026 · Find sets and meetup times with friends',
+        short_name: 'EDC 2026',
+        description: 'Pick your sets, share with friends, find your overlap and meetup windows for EDC Las Vegas 2026.',
         theme_color: '#000000',
         background_color: '#000000',
         display: 'standalone',
