@@ -295,7 +295,10 @@ function App() {
       const scheduleName =
         trimmedName ||
         (schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`);
-      setSchedules([{ name: scheduleName, sets }, ...schedules]);
+      // Append new schedules at the END so the spatial direction matches the
+      // newly-bottom-positioned "Add" button (most recent shows up just above
+      // the button you tapped to add it).
+      setSchedules([...schedules, { name: scheduleName, sets }]);
     } else {
       // Edit mode: the picker was pre-filled with the schedule's existing
       // sets AND name, so on save we replace both — unchecking removes sets,
@@ -1413,8 +1416,14 @@ function App() {
           <div className="flex flex-col gap-6">
             <div className="w-full space-y-4">
             
-            {/* Schedule list display */}
-            <div className="mt-4">
+            {/* Schedule list display.
+                `flex flex-col` + `order-*` on children rearranges visually
+                without restructuring the JSX: heading (default order 0)
+                stays on top, schedule list (`order-1`) sits in the middle,
+                and the Add Schedule button block (`order-2`) sits at the
+                bottom — matching the natural "new entries append below"
+                mental model. */}
+            <div className="mt-4 flex flex-col">
               {/* Centered title with more prominence */}
               <div className="text-center mb-4">
                 <h3 className="text-2xl font-bold text-edc-blue bg-gradient-to-r from-edc-blue to-edc-pink bg-clip-text text-transparent inline-block">
@@ -1434,7 +1443,7 @@ function App() {
                        makes the next step impossible to miss)
                     – 2+ schedules: subtle teal "Add Another Schedule" (just an option) */}
                 {!showScheduleOptions ? (
-                  <div className="flex justify-center mb-4">
+                  <div className="order-2 flex justify-center mt-4">
                     <button
                       onClick={handleShowScheduleOptions}
                       className={
@@ -1454,7 +1463,7 @@ function App() {
                     </button>
                   </div>
                 ) : (
-                   <div className="border border-edc-purple/30 rounded-lg mb-4 overflow-hidden bg-black/30">
+                   <div className="order-2 border border-edc-purple/30 rounded-lg mt-4 overflow-hidden bg-black/30">
                      <div className="p-4">
                          {showGPTSubscriptionOptions ? (
                           <>
@@ -1739,7 +1748,7 @@ If the image isn't readable, reply exactly:
                     </div>
                   </div>
                 )}
-                <ul className="space-y-2">
+                <ul className="order-1 space-y-2">
                   {schedules.map((schedule, idx) => (
                     <li key={idx} className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple schedule-item">
                       <div className="flex items-center justify-between">
@@ -2098,15 +2107,15 @@ If the image isn't readable, reply exactly:
         </div>
       )}
 
-      {/* "Need another schedule" hint or "no common sets" warning — only after
-          there's at least one schedule, so it's actionable. */}
-      {schedules.length > 0 && (schedules.length < 2 || noGapsFound) && (
+      {/* "No overlap" warning is the only hint we still show down here. The
+          "you need a friend's schedule" prompt is now communicated by the
+          prominent gradient Add button right above this region — no need to
+          repeat it as a banner. */}
+      {schedules.length >= 2 && noGapsFound && (
         <div className="text-center mb-3 py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
           <div className="flex items-center justify-center">
             <span className="text-edc-purple text-xs font-medium">
-              {schedules.length < 2
-                ? "Add a friend's schedule above to find your meetup times"
-                : 'No overlap yet — try adding a shared set in both schedules.'}
+              No overlap yet — try adding a shared set in both schedules.
             </span>
           </div>
         </div>
