@@ -2298,10 +2298,10 @@ If the image isn't readable, reply exactly:
                   return (
                     <div
                       key={meetup.id || idx}
-                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-3.5 text-left"
+                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-4 text-left"
                     >
                       {/* Header: meetup index + festival-night badge */}
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-3">
                         <span className="text-edc-pink/60 text-xs font-orbitron tracking-wider">
                           #{idx + 1}
                         </span>
@@ -2312,34 +2312,27 @@ If the image isn't readable, reply exactly:
                         )}
                       </div>
 
-                      {/* Time — primary visual focus, big and bold */}
+                      {/* Time — primary visual focus */}
                       <div className="flex items-baseline gap-2 flex-wrap mb-3">
                         <span className="text-xl sm:text-2xl font-bold text-white tabular-nums leading-none">
-                          {formatTime(meetup.start)}
-                        </span>
-                        <span className="text-edc-purple/80 text-sm leading-none">
-                          – {formatTime(meetup.end)}
+                          {formatTime(meetup.start)} – {formatTime(meetup.end)}
                         </span>
                         <span className="text-white/40 text-xs leading-none">
-                          ({formatDuration(meetup.start, meetup.end)})
+                          · {formatDuration(meetup.start, meetup.end)}
                         </span>
                       </div>
 
-                      {/* Context: artist + stage, smaller, can wrap naturally */}
-                      <div className="text-sm text-white/80 leading-snug mb-2">
-                        Meet before{' '}
-                        <span className="text-edc-pink font-semibold">
-                          {meetup.beforeCommonArtist || 'next artist'}
-                        </span>
-                        {' '}at{' '}
-                        <span className="text-edc-blue">
-                          {meetup.beforeStage || 'unknown stage'}
-                        </span>
+                      {/* Artist + stage stacked, no decorative prose */}
+                      <div className="text-edc-pink font-semibold text-base leading-snug">
+                        {meetup.beforeCommonArtist || 'Next artist'}
+                      </div>
+                      <div className="text-edc-blue/80 text-sm leading-snug mt-0.5 mb-3">
+                        @ {meetup.beforeStage || 'Unknown stage'}
                       </div>
 
-                      {/* Who's joining */}
-                      <div className="text-xs text-white/50 mb-3">
-                        With: <span className="text-white/80">{meetup.schedules.join(' · ')}</span>
+                      {/* Schedules — just names, dot-separated */}
+                      <div className="text-xs text-white/60 mb-3">
+                        {meetup.schedules.join(' · ')}
                       </div>
 
                       {/* Meetup spot — editable */}
