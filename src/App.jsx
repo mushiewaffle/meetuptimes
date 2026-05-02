@@ -2298,7 +2298,7 @@ If the image isn't readable, reply exactly:
                   return (
                     <div
                       key={meetup.id || idx}
-                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-4 text-left"
+                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-4 text-left meetup-card"
                     >
                       {/* Header: meetup index + festival-night badge */}
                       <div className="flex items-center justify-between mb-3">
@@ -2322,17 +2322,22 @@ If the image isn't readable, reply exactly:
                         </span>
                       </div>
 
-                      {/* Artist (with "Before" prefix for clarity) + stage stacked.
-                          "Before" label tells the user this is the set the meetup
-                          happens just before — without a verbose sentence. */}
+                      {/* Artist + stage as labeled rows so each field is
+                          unambiguous. "STAGE" is explicitly the venue (a stage
+                          at EDC), "MEETUP SPOT" below is the user-defined
+                          rendezvous point — labels prevent the two from being
+                          confused. */}
                       <div className="leading-snug">
                         <span className="text-white/50 text-sm">Before</span>{' '}
                         <span className="text-edc-pink font-semibold text-base">
                           {meetup.beforeCommonArtist || 'next artist'}
                         </span>
                       </div>
-                      <div className="text-edc-blue/80 text-sm leading-snug mt-0.5 mb-3">
-                        @ {meetup.beforeStage || 'Unknown stage'}
+                      <div className="flex items-baseline gap-1.5 mt-1 mb-3">
+                        <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
+                        <span className="text-edc-blue/80 text-xs">
+                          {meetup.beforeStage || 'unknown stage'}
+                        </span>
                       </div>
 
                       {/* Schedules — just names, dot-separated */}
@@ -2340,15 +2345,19 @@ If the image isn't readable, reply exactly:
                         {meetup.schedules.join(' · ')}
                       </div>
 
-                      {/* Meetup spot — editable */}
-                      <div className="pt-2 border-t border-edc-purple/15">
+                      {/* Meetup spot — when filled, render as a non-button div
+                          so html2canvas captures it (App.css hides every
+                          <button> in screenshot mode). The edit pencil and
+                          the "Add" CTA stay as buttons so they get hidden
+                          in the saved image. */}
+                      <div className="pt-2.5 border-t border-edc-purple/15">
                         {editingLocationIndex === idx ? (
                           <div className="flex items-center gap-2">
                             <input
                               type="text"
                               value={editingLocation}
                               onChange={(e) => setEditingLocation(e.target.value)}
-                              placeholder="Enter meetup spot…"
+                              placeholder="e.g. by the kineticFIELD entrance…"
                               className="flex-1 bg-black/30 border border-edc-purple/30 text-white/90 text-sm rounded px-2 py-1 focus:outline-none focus:border-edc-pink"
                               autoFocus
                               onKeyDown={(e) => {
@@ -2358,28 +2367,34 @@ If the image isn't readable, reply exactly:
                             />
                             <button
                               onClick={saveLocation}
-                              className="px-3 py-1 bg-edc-purple/60 hover:bg-edc-purple/80 rounded text-white text-xs"
+                              className="px-3 py-1 bg-edc-purple/60 hover:bg-edc-purple/80 rounded text-white text-xs hide-in-screenshot"
                             >
                               Save
                             </button>
                           </div>
                         ) : meetup.customLocation ? (
-                          <button
-                            onClick={() => startEditingLocation(idx)}
-                            className="w-full text-left flex items-center gap-2 text-sm text-white/80 hover:text-white transition-colors"
-                          >
-                            <span className="text-edc-blue/70">📍</span>
-                            <span className="flex-1 truncate">{meetup.customLocation}</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-edc-blue/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
+                          <div className="flex items-start gap-2 text-sm">
+                            <span className="text-edc-pink/80 shrink-0 leading-none mt-0.5">📍</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[10px] uppercase tracking-widest text-white/40 mb-0.5">Meetup spot</div>
+                              <div className="text-white/90 break-words">{meetup.customLocation}</div>
+                            </div>
+                            <button
+                              onClick={() => startEditingLocation(idx)}
+                              className="text-edc-blue/50 hover:text-edc-blue/80 shrink-0 transition-colors hide-in-screenshot p-0.5"
+                              title="Edit meetup spot"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                          </div>
                         ) : (
                           <button
                             onClick={() => startEditingLocation(idx)}
-                            className="flex items-center gap-2 text-sm text-edc-pink/60 hover:text-edc-pink/90 transition-colors"
+                            className="flex items-center gap-2 text-sm text-edc-pink/60 hover:text-edc-pink/90 transition-colors hide-in-screenshot"
                           >
-                            <span className="text-edc-blue/70">📍</span>
+                            <span className="text-edc-pink/80">📍</span>
                             <span>Add meetup spot</span>
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
