@@ -1087,26 +1087,45 @@ function App() {
                 overlay.style.justifyContent = 'center';
                 document.body.appendChild(overlay);
                 
-                // Create clickable thumbnail preview
+                // Create clickable thumbnail preview.
+                // Capped at ~62vh so the full image stays visible on mobile
+                // AND the "press and hold to save" instruction below remains
+                // on-screen without scrolling.
                 const preview = document.createElement('img');
                 preview.src = dataUrl;
-                preview.style.width = '80%';
-                preview.style.maxWidth = '350px';
-                preview.style.borderRadius = '6px';
-                preview.style.marginBottom = '10px';
-                preview.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+                preview.style.width = 'auto';
+                preview.style.maxWidth = '88%';
+                preview.style.maxHeight = '62vh';
+                preview.style.objectFit = 'contain';
+                preview.style.borderRadius = '8px';
+                preview.style.boxShadow = '0 0 12px rgba(255,0,255,0.25)';
                 preview.style.cursor = 'pointer';
-                
-                // Add hint text
-                const hint = document.createElement('p');
-                hint.innerHTML = 'Press and hold image to save';
-                hint.style.color = 'rgba(255, 255, 255, 0.7)';
-                hint.style.fontSize = '14px';
-                hint.style.marginTop = '12px';
+
+                // Add prominent press-and-hold instruction below the image.
+                const hint = document.createElement('div');
+                hint.style.marginTop = '16px';
+                hint.style.padding = '10px 16px';
+                hint.style.borderRadius = '999px';
+                hint.style.background = 'rgba(255, 0, 255, 0.12)';
+                hint.style.border = '1px solid rgba(255, 0, 255, 0.4)';
+                hint.style.color = 'rgba(255, 255, 255, 0.95)';
+                hint.style.fontSize = '13px';
+                hint.style.fontWeight = '600';
                 hint.style.textAlign = 'center';
-                
+                hint.style.maxWidth = '88%';
+                hint.innerHTML = '👆 Press and hold the image to save';
+
+                // Subtle helper text below the main hint
+                const subHint = document.createElement('div');
+                subHint.style.marginTop = '8px';
+                subHint.style.color = 'rgba(255, 255, 255, 0.5)';
+                subHint.style.fontSize = '11px';
+                subHint.style.textAlign = 'center';
+                subHint.innerHTML = 'Tap × in the corner when done';
+
                 overlay.appendChild(preview);
                 overlay.appendChild(hint);
+                overlay.appendChild(subHint);
                 
                 // Make the image directly saveable
                 preview.style.webkitTouchCallout = 'default';
@@ -2312,9 +2331,10 @@ If the image isn't readable, reply exactly:
                         )}
                       </div>
 
-                      {/* Time — primary visual focus */}
-                      <div className="flex items-baseline gap-2 flex-wrap mb-3">
-                        <span className="text-xl sm:text-2xl font-bold text-white tabular-nums leading-none">
+                      {/* Time — primary visual focus, sized down so it doesn't
+                          dominate the card on mobile. */}
+                      <div className="flex items-baseline gap-2 flex-wrap mb-2">
+                        <span className="text-lg font-bold text-white tabular-nums leading-none">
                           {formatTime(meetup.start)} – {formatTime(meetup.end)}
                         </span>
                         <span className="text-white/40 text-xs leading-none">
@@ -2322,35 +2342,29 @@ If the image isn't readable, reply exactly:
                         </span>
                       </div>
 
-                      {/* Artist + stage as labeled rows so each field is
-                          unambiguous. "STAGE" is explicitly the venue (a stage
-                          at EDC), "MEETUP SPOT" below is the user-defined
-                          rendezvous point — labels prevent the two from being
-                          confused. */}
                       <div className="leading-snug">
                         <span className="text-white/50 text-sm">Before</span>{' '}
                         <span className="text-edc-pink font-semibold text-base">
                           {meetup.beforeCommonArtist || 'next artist'}
                         </span>
                       </div>
-                      <div className="flex items-baseline gap-1.5 mt-1 mb-3">
+                      <div className="flex items-baseline gap-1.5 mt-1 mb-2">
                         <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
                         <span className="text-edc-blue/80 text-xs">
                           {meetup.beforeStage || 'unknown stage'}
                         </span>
                       </div>
 
-                      {/* Schedules — just names, dot-separated */}
-                      <div className="text-xs text-white/60 mb-3">
+                      <div className="text-xs text-white/60 mb-2">
                         {meetup.schedules.join(' · ')}
                       </div>
 
-                      {/* Meetup spot — when filled, render as a non-button div
-                          so html2canvas captures it (App.css hides every
-                          <button> in screenshot mode). The edit pencil and
-                          the "Add" CTA stay as buttons so they get hidden
-                          in the saved image. */}
-                      <div className="pt-2.5 border-t border-edc-purple/15">
+                      {/* Meetup spot — single line. The 📍 emoji alone signals
+                          "rendezvous point", so the explicit label is redundant.
+                          When filled, the text is in a non-button so html2canvas
+                          captures it (App.css hides every <button> in screenshot
+                          mode). */}
+                      <div className="pt-1.5 border-t border-edc-purple/15">
                         {editingLocationIndex === idx ? (
                           <div className="flex items-center gap-2">
                             <input
@@ -2373,12 +2387,9 @@ If the image isn't readable, reply exactly:
                             </button>
                           </div>
                         ) : meetup.customLocation ? (
-                          <div className="flex items-start gap-2 text-sm">
-                            <span className="text-edc-pink/80 shrink-0 leading-none mt-0.5">📍</span>
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[10px] uppercase tracking-widest text-white/40 mb-0.5">Meetup spot</div>
-                              <div className="text-white/90 break-words">{meetup.customLocation}</div>
-                            </div>
+                          <div className="flex items-center gap-2 text-sm">
+                            <span className="text-edc-pink/80 shrink-0">📍</span>
+                            <span className="flex-1 text-white/90 truncate min-w-0">{meetup.customLocation}</span>
                             <button
                               onClick={() => startEditingLocation(idx)}
                               className="text-edc-blue/50 hover:text-edc-blue/80 shrink-0 transition-colors hide-in-screenshot p-0.5"
@@ -2396,9 +2407,6 @@ If the image isn't readable, reply exactly:
                           >
                             <span className="text-edc-pink/80">📍</span>
                             <span>Add meetup spot</span>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
                           </button>
                         )}
                       </div>
