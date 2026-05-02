@@ -915,14 +915,13 @@ function App() {
       const offscreenElement = meetupPlanRef.current.cloneNode(true);
       offscreenElement.classList.add('screenshot-mode');
 
-      // Two fixes for the user-reported "Siiso" cut-off bug:
-      // 1. Bump padding-bottom on every card so html2canvas's height
-      //    measurement always has slack for descenders + the location row.
-      // 2. Strip `overflow: hidden` from any element inside the card (the
-      //    `truncate` utility sets it; combined with html2canvas's height
-      //    rounding, the bottom of the location text was being clipped).
+      // Tighten meetup card padding for the exported image — the natural
+      // py-3 (12px top/bottom) felt loose in screenshots. Also strip any
+      // overflow:hidden / text-ellipsis on descendants so html2canvas can't
+      // clip glyphs at row boundaries.
       offscreenElement.querySelectorAll('.meetup-card').forEach((card) => {
-        card.style.paddingBottom = '20px';
+        card.style.paddingTop = '10px';
+        card.style.paddingBottom = '10px';
         card.querySelectorAll('*').forEach((node) => {
           if (node instanceof HTMLElement) {
             const cs = window.getComputedStyle(node);
@@ -1198,17 +1197,20 @@ function App() {
       })
       .join('');
 
+    const exportDate = new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+
     offscreenContainer.innerHTML = `
-      <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid rgba(255,54,222,0.2);">
+      <div style="text-align:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(255,54,222,0.2);">
         <div style="font-size:10px;letter-spacing:0.3em;color:#2dd4ff;font-family:'Orbitron',sans-serif;text-transform:uppercase;">EDC LAS VEGAS 2026 · MAY 15–17</div>
-        <div style="font-size:24px;font-weight:bold;color:#ff36de;margin-top:6px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">${escapeHtml(schedule.name)}</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;">${schedule.sets.length} ${schedule.sets.length === 1 ? 'set' : 'sets'}</div>
+        <div style="font-size:22px;font-weight:bold;color:#ff36de;margin-top:6px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">My EDC Schedule</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:4px;">Created with meetuptimes.com · ${escapeHtml(exportDate)}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;flex-direction:column;gap:6px;">
         ${setsHtml || '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px 0;font-size:13px;">No sets in this schedule yet.</div>'}
-      </div>
-      <div style="text-align:center;margin-top:18px;padding-top:12px;border-top:1px solid rgba(255,0,255,0.12);font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.05em;">
-        meetuptimes.com
       </div>
     `;
 
