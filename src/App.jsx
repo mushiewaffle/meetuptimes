@@ -1768,7 +1768,10 @@ If the image isn't readable, reply exactly:
                 <ul className="order-1 space-y-2">
                   {schedules.map((schedule, idx) => (
                     <li key={idx} className="bg-black bg-opacity-60 rounded-md p-3 border border-edc-purple schedule-item">
-                      <div className="flex items-center justify-between">
+                      {/* gap-3 ensures the truncated schedule name doesn't run
+                          flush into the "X sets · Edit · Remove" group when
+                          a user gives a schedule a long name. */}
+                      <div className="flex items-center justify-between gap-3">
                         {editingScheduleIndex === idx ? (
                           <div className="flex items-center">
                             <input

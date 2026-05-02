@@ -197,6 +197,7 @@ export default function EDCPicker({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={namePlaceholder}
+                  maxLength={40}
                   className="w-full bg-transparent text-lg font-bold text-white placeholder-white/30 border-b-2 border-edc-purple/40 hover:border-edc-purple/70 focus:border-edc-pink focus:outline-none py-1 pr-7 pl-0 transition-colors"
                 />
                 <svg
