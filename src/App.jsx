@@ -1769,24 +1769,22 @@ If the image isn't readable, reply exactly:
                             </button>
                           </div>
                         ) : (
-                          <div className="flex items-center">
-                            <span 
-                              className="text-edc-pink font-bold cursor-pointer hover:underline"
-                              onClick={() => startEditingScheduleName(idx)}
-                            >{schedule.name}</span>
-                            <button
-                              onClick={() => startEditingScheduleName(idx)}
-                              className="ml-2 opacity-30 hover:opacity-100 transition-opacity text-white text-xs"
-                              title="Edit Name"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
+                          <div className="flex items-center min-w-0 flex-1">
+                            {/* Schedule name — display-only here. Renaming
+                                happens in the picker (one consolidated edit
+                                action), so the inline pencil is gone. */}
+                            <span className="text-edc-pink font-bold truncate">{schedule.name}</span>
                           </div>
                         )}
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center gap-3 shrink-0">
                           <span className="text-edc-purple text-sm">{schedule.sets.length} sets</span>
+                          <button
+                            onClick={() => handleOpenPickerForExisting(idx)}
+                            className="text-edc-blue hover:text-white text-sm transition-colors"
+                            title="Edit name and sets"
+                          >
+                            Edit
+                          </button>
                           <button
                             onClick={() => removeSchedule(idx)}
                             className="text-red-400 hover:text-red-300 text-sm"
@@ -2046,27 +2044,10 @@ If the image isn't readable, reply exactly:
                                 </div>
                             )}
                             
-                            {/* Edit sets — the single, prominent edit action for this
-                                schedule. Opens the picker pre-filled; tap to add,
-                                untap to remove, save to apply. With per-row buttons
-                                gone, this is now the one obvious affordance. */}
-                            {isAddingSetToSchedule !== idx && (
-                              <button
-                                data-add-set-button={idx}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  e.preventDefault();
-                                  handleOpenPickerForExisting(idx);
-                                }}
-                                className="mt-3 w-full text-sm text-edc-blue hover:text-white flex items-center justify-center gap-1.5 px-3 py-2 bg-edc-blue/10 hover:bg-edc-blue/20 border border-edc-blue/30 hover:border-edc-blue/60 rounded-md transition-all font-medium"
-                                title="Edit this schedule's sets in the picker"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                </svg>
-                                Edit sets
-                              </button>
-                            )}
+                            {/* The big "Edit sets" button moved to the schedule's
+                                header (top-right "Edit" link next to "Remove").
+                                Same picker, same flow — just less visual weight in
+                                the card body. */}
                             
                             {/* Show expansion button if there are more than 3 sets and not expanded */}
                             {schedule.sets.length > 3 && !expandedSchedules[idx] && (

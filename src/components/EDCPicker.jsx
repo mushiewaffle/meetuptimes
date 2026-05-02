@@ -265,11 +265,6 @@ export default function EDCPicker({
             <div className="flex-1 text-sm text-white/80">
               <span className="text-edc-blue font-bold">{picked.size}</span>{' '}
               {picked.size === 1 ? 'set' : 'sets'} selected
-              {picked.size > 0 && (
-                <span className="text-white/40 text-xs ml-2">
-                  ({totalsByNight.Fri}F · {totalsByNight.Sat}S · {totalsByNight.Sun}S)
-                </span>
-              )}
             </div>
             <button
               onClick={onCancel}
