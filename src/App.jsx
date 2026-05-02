@@ -1424,17 +1424,31 @@ function App() {
                 </h3>
               </div>
                 
-                {/* Conditionally show either the Add Schedule button or the Schedule Creation Options */}
+                {/* Conditionally show either the Add Schedule button or the Schedule Creation Options.
+                    The button label and visual weight scale to the user's progress:
+                    – 0 schedules: subtle teal "Add Your Schedule" (just get started)
+                    – 1 schedule: prominent gradient "Add Friend's Schedule" with glow + arrow
+                       (real-user testing showed people didn't realize they needed step 2 — this
+                       makes the next step impossible to miss)
+                    – 2+ schedules: subtle teal "Add Another Schedule" (just an option) */}
                 {!showScheduleOptions ? (
                   <div className="flex justify-center mb-4">
                     <button
                       onClick={handleShowScheduleOptions}
-                      className="w-full py-2.5 rounded-md text-white font-medium bg-edc-blue/40 hover:bg-edc-blue/60 transition-all duration-200 flex items-center justify-center"
+                      className={
+                        schedules.length === 1
+                          ? 'w-full py-3.5 rounded-md text-white font-bold text-base bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 animate-glow shadow-lg shadow-edc-pink/30 transition-all duration-200 flex items-center justify-center font-orbitron tracking-wide'
+                          : 'w-full py-2.5 rounded-md text-white font-medium bg-edc-blue/40 hover:bg-edc-blue/60 transition-all duration-200 flex items-center justify-center'
+                      }
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                       </svg>
-                      Add a Schedule
+                      {schedules.length === 0
+                        ? 'Add Your Schedule'
+                        : schedules.length === 1
+                          ? "Add Friend's Schedule →"
+                          : 'Add Another Schedule'}
                     </button>
                   </div>
                 ) : (
@@ -2402,13 +2416,18 @@ If the image isn't readable, reply exactly:
 
       {/* EDC roster picker — modal for tap-from-list set selection. When
           editing an existing schedule, pre-checks its current sets so the user
-          can deselect to remove or tap others to add. */}
+          can deselect to remove or tap others to add. The title flips to
+          "Pick your friend's sets" on schedule #2 so a brand-new user (who
+          just saved their own picks) immediately understands this round is
+          for their friend, not a re-do. */}
       <EDCPicker
         open={pickerOpen}
         title={
-          pickerTargetIdx === null
-            ? 'Pick your sets'
-            : `Edit ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
+          pickerTargetIdx !== null
+            ? `Edit ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
+            : schedules.length === 0
+              ? 'Pick your sets'
+              : "Pick your friend's sets"
         }
         initialSelection={
           pickerTargetIdx !== null
