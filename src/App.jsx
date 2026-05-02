@@ -2289,7 +2289,7 @@ If the image isn't readable, reply exactly:
                 </button>
               </div>
             
-              <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">Your EDC Meetup Plan</h2>
+              <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">EDC meetup plan</h2>
               <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
             
               <div className="space-y-6">
@@ -2529,12 +2529,21 @@ If the image isn't readable, reply exactly:
               </li>
             </ol>
 
-            <div className="px-5 pb-4 text-[11px] text-white/40 leading-relaxed border-t border-edc-purple/20 pt-3 text-left">
-              <div className="mb-2">
+            <div className="px-5 pb-4 text-[11px] text-white/40 leading-relaxed border-t border-edc-purple/20 pt-3 text-left space-y-2">
+              <div>
                 <span className="text-edc-blue/80 font-semibold">Privacy:</span> all your picks stay on this device — nothing is uploaded.
               </div>
               <div>
                 <span className="text-edc-pink/80 font-semibold">Have a screenshot?</span> Use the "From Insomniac Screenshot" option to skip the tap-from-list step.
+              </div>
+              <div>
+                <span className="text-edc-purple/80 font-semibold">Issues or feedback?</span>{' '}
+                <a
+                  href="mailto:mushiewaffle67@gmail.com?subject=meetuptimes.com%20feedback"
+                  className="text-white/60 hover:text-edc-blue underline underline-offset-2 transition-colors"
+                >
+                  mushiewaffle67@gmail.com
+                </a>
               </div>
             </div>
 
