@@ -1460,7 +1460,7 @@ function App() {
                        makes the next step impossible to miss)
                     – 2+ schedules: subtle teal "Add Another Schedule" (just an option) */}
                 {!showScheduleOptions ? (
-                  <div className="order-3 flex justify-center mt-4">
+                  <div className="order-2 flex justify-center mt-4">
                     <button
                       onClick={handleShowScheduleOptions}
                       className={
@@ -1480,7 +1480,7 @@ function App() {
                     </button>
                   </div>
                 ) : (
-                   <div className="order-3 border border-edc-purple/30 rounded-lg mt-4 overflow-hidden bg-black/30">
+                   <div className="order-2 border border-edc-purple/30 rounded-lg mt-4 overflow-hidden bg-black/30">
                      <div className="p-4">
                          {showGPTSubscriptionOptions ? (
                           <>
@@ -2108,24 +2108,26 @@ If the image isn't readable, reply exactly:
                   ))}
                 </ul>
 
-                {/* "No overlap" warning — order-2 sits between schedules
-                    (order-1) and Add button (order-3). */}
+                {/* "No overlap" warning — sits with the Find Meetup Times
+                    button (order-3) so the warning appears next to the action
+                    it modifies. */}
                 {schedules.length >= 2 && noGapsFound && (
-                  <div className="order-2 mt-4 text-center py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
+                  <div className="order-3 mt-4 text-center py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
                     <span className="text-edc-purple text-xs font-medium">
                       No overlap yet — try adding a shared set in both schedules.
                     </span>
                   </div>
                 )}
 
-                {/* Find Meetup Times — primary action for a 2+ schedule
-                    user. order-2 places it directly under the schedules and
-                    above the secondary "Add Another" button (order-3). */}
+                {/* Find Meetup Times — order-3 sits at the bottom, BELOW the
+                    secondary "Add Another" (order-2). Mental model: adding
+                    schedules is grouped with the schedule list; Find Meetup
+                    Times is the finishing action once you've added everyone. */}
                 {schedules.length >= 2 && (
                   <button
                     onClick={findMeetupGaps}
                     disabled={noGapsFound}
-                    className="order-2 mt-4 w-full py-3 rounded-md text-white font-bold text-base font-orbitron tracking-wider transition-all bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 animate-glow disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="order-3 mt-4 w-full py-3 rounded-md text-white font-bold text-base font-orbitron tracking-wider transition-all bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 animate-glow disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Find Meetup Times →
                   </button>
@@ -2457,9 +2459,10 @@ If the image isn't readable, reply exactly:
         </div>
       )}
 
-      {/* "How does this work?" modal — concise 3-step walkthrough plus
-          a small FAQ-style line about the meetup output. Dismissed via X
-          or backdrop click. */}
+      {/* "How does this work?" modal — concise 3-step walkthrough.
+          All inner text uses text-left explicitly because App.css sets a
+          global text-align: center on #root that bleeds into modal content
+          and made the body text look misaligned next to the numbered circles. */}
       {showHelp && (
         <div
           onClick={() => setShowHelp(false)}
@@ -2467,71 +2470,79 @@ If the image isn't readable, reply exactly:
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md bg-edc-black border border-edc-purple/40 rounded-2xl p-5 shadow-2xl"
+            className="w-full max-w-md bg-edc-black border border-edc-purple/40 rounded-2xl shadow-2xl text-left max-h-[90vh] overflow-y-auto"
           >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <div className="font-orbitron tracking-widest text-[10px] text-edc-blue mb-0.5">
+            <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3">
+              <div className="text-left">
+                <div className="font-orbitron tracking-widest text-[10px] text-edc-blue mb-1">
                   HOW IT WORKS
                 </div>
-                <h2 className="text-xl font-bold text-white">
-                  Find when you can meet up
+                <h2 className="text-xl font-bold text-white leading-tight">
+                  3 steps to your meetup plan
                 </h2>
               </div>
               <button
                 onClick={() => setShowHelp(false)}
-                className="text-white/40 hover:text-edc-pink text-2xl leading-none -mt-1"
+                className="shrink-0 text-white/40 hover:text-edc-pink text-2xl leading-none w-8 h-8 flex items-center justify-center -mt-1"
                 aria-label="Close"
               >
                 ×
               </button>
             </div>
-            <ol className="space-y-4 text-sm text-white/85 mb-5">
-              <li className="flex gap-3">
-                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-blue/20 border border-edc-blue/60 text-edc-blue font-bold text-sm flex items-center justify-center">
+
+            <ol className="px-5 pb-4 space-y-4 text-left">
+              <li className="flex gap-3 text-left">
+                <div className="shrink-0 w-8 h-8 rounded-full bg-edc-blue/20 border-2 border-edc-blue/60 text-edc-blue font-bold text-sm flex items-center justify-center">
                   1
                 </div>
-                <div>
-                  <div className="text-white font-semibold mb-0.5">Pick your sets</div>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-white font-semibold text-sm mb-0.5">Pick your sets</div>
                   <div className="text-white/60 text-xs leading-relaxed">
-                    Tap which EDC 2026 artists you want to see. Switch between Fri / Sat / Sun nights with the tabs.
+                    Tap the EDC 2026 artists you want to see. Switch between Fri, Sat, and Sun with the tabs.
                   </div>
                 </div>
               </li>
-              <li className="flex gap-3">
-                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-pink/20 border border-edc-pink/60 text-edc-pink font-bold text-sm flex items-center justify-center">
+              <li className="flex gap-3 text-left">
+                <div className="shrink-0 w-8 h-8 rounded-full bg-edc-pink/20 border-2 border-edc-pink/60 text-edc-pink font-bold text-sm flex items-center justify-center">
                   2
                 </div>
-                <div>
-                  <div className="text-white font-semibold mb-0.5">Add your friend's sets</div>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-white font-semibold text-sm mb-0.5">Add your friend's sets</div>
                   <div className="text-white/60 text-xs leading-relaxed">
-                    Same picker — tap their picks, name the schedule (e.g. "Alice"). You can add up to as many friends as you want.
+                    Same picker — tap their picks and name the schedule (e.g. "Alice"). Repeat for as many friends as you want.
                   </div>
                 </div>
               </li>
-              <li className="flex gap-3">
-                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-purple/20 border border-edc-purple/60 text-edc-purple font-bold text-sm flex items-center justify-center">
+              <li className="flex gap-3 text-left">
+                <div className="shrink-0 w-8 h-8 rounded-full bg-edc-purple/20 border-2 border-edc-purple/60 text-edc-purple font-bold text-sm flex items-center justify-center">
                   3
                 </div>
-                <div>
-                  <div className="text-white font-semibold mb-0.5">Find Meetup Times</div>
+                <div className="flex-1 min-w-0 text-left">
+                  <div className="text-white font-semibold text-sm mb-0.5">Find Meetup Times</div>
                   <div className="text-white/60 text-xs leading-relaxed">
-                    Tap the button — we'll find the time slots before sets you BOTH picked. Pick which ones to lock in for your meetup plan.
+                    The app finds time slots right before sets you both picked. Lock in your favorites to build a shareable meetup plan.
                   </div>
                 </div>
               </li>
             </ol>
-            <div className="text-[11px] text-white/40 leading-relaxed border-t border-edc-purple/20 pt-3">
-              All your data stays on this device — nothing is uploaded.
-              Have an Insomniac screenshot already? Use the "From Insomniac
-              Screenshot" option to skip the tap-from-list step.
+
+            <div className="px-5 pb-4 text-[11px] text-white/40 leading-relaxed border-t border-edc-purple/20 pt-3 text-left">
+              <div className="mb-2">
+                <span className="text-edc-blue/80 font-semibold">Privacy:</span> all your picks stay on this device — nothing is uploaded.
+              </div>
+              <div>
+                <span className="text-edc-pink/80 font-semibold">Have a screenshot?</span> Use the "From Insomniac Screenshot" option to skip the tap-from-list step.
+              </div>
             </div>
-            <button
-              onClick={() => setShowHelp(false)}
-              className="mt-4 w-full py-2.5 rounded-md bg-gradient-to-r from-edc-blue to-edc-pink text-white font-bold text-sm font-orbitron tracking-wider"
-            >
-              Got it
-            </button>
+
+            <div className="px-5 pb-5">
+              <button
+                onClick={() => setShowHelp(false)}
+                className="w-full py-3 rounded-md bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 text-white font-bold text-sm font-orbitron tracking-wider transition-opacity"
+              >
+                Got it
+              </button>
+            </div>
           </div>
         </div>
       )}
