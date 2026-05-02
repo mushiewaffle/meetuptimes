@@ -36,66 +36,116 @@ function App() {
     setTableErrorMessage('');
   };
   
-  // Parse table input for AI parsing mode
+  // Parse table input for AI parsing mode.
+  //
+  // Real-user bug: GPT often returns plain space-separated text instead of
+  // a strict markdown table with pipes — the old parser silently rejected
+  // every line. Now handles three formats:
+  //
+  //   1. Pipe markdown: `| Sun | Whethan | 2:30 AM | Basspod |`
+  //   2. Tab/space-aligned: `Sun  Whethan  2:30 AM  Basspod`
+  //   3. Plain text:    `Sun Whethan 2:30 AM Basspod`
+  //
+  // For non-pipe formats we use the time pattern (e.g. "2:30 AM") as an
+  // anchor: text before the time = optional day prefix + artist; text
+  // after = stage.
   const parseTableInput = (input) => {
     if (!input.trim()) return [];
 
     const lines = input.trim().split('\n');
     const parsedSets = [];
-    // Default column order matches the legacy 3-col GPT prompt; updated below
-    // when a header row is present (handles new 4-col `Day|Artist|Time|Stage`).
-    let columnIndices = { day: -1, artist: 0, time: 1, stage: 2 };
 
     // Strip markdown link wrapping like [Lu.Re](http://Lu.Re) -> Lu.Re
     const stripMdLinks = (s) => s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-    const dayMap = { fri: 'Fri', friday: 'Fri', sat: 'Sat', saturday: 'Sat', sun: 'Sun', sunday: 'Sun' };
+    const dayMap = {
+      fri: 'Fri', friday: 'Fri',
+      sat: 'Sat', saturday: 'Sat',
+      sun: 'Sun', sunday: 'Sun',
+    };
+    // Time pattern that we'll use as the anchor for plain-text rows.
+    // Matches "2:30 AM", "11:00pm", "2:30AM" etc.
+    const timeAnchor = /(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)/i;
+    // Also accept dot-separated times like "2.30 PM"
+    const timeAnchorDot = /(\d{1,2})\.(\d{2})\s*(am|pm|a\.m\.|p\.m\.)/i;
+    const findTime = (s) => s.match(timeAnchor) || s.match(timeAnchorDot);
 
-    // Process each line
+    // Detect overall format up front so we don't have to guess per line.
+    const hasPipes = lines.some((l) => /\|/.test(l));
+
+    let columnIndices = { day: -1, artist: 0, time: 1, stage: 2 };
+    let headerSeen = false;
+
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line || line.startsWith('---')) continue;
+      const rawLine = lines[i].trim();
+      if (!rawLine) continue;
+      // Skip markdown separator rows: `|---|---|` or `------`
+      if (/^[\s\-:|]+$/.test(rawLine)) continue;
 
-      // Split by pipe and clean up each cell
-      const columns = line.split('|')
-        .map(cell => cell.trim())
-        .filter(cell => cell.length > 0);
+      let day = '';
+      let artist = '';
+      let timeStr = '';
+      let stage = '';
 
-      // Check if this is a header row
-      if (i <= 1 && (line.includes('Artist') || line.includes('Time') || line.includes('Stage') || line.includes('Day'))) {
-        // Determine column positions based on header
-        for (let j = 0; j < columns.length; j++) {
-          const header = columns[j].toLowerCase();
-          if (header === 'day' || header.startsWith('day')) {
-            columnIndices.day = j;
-          } else if (header.includes('artist') || header.includes('dj') || header.includes('performer')) {
-            columnIndices.artist = j;
-          } else if (header.includes('time') || header.includes('start')) {
-            columnIndices.time = j;
-          } else if (header.includes('stage') || header.includes('location')) {
-            columnIndices.stage = j;
+      if (hasPipes && /\|/.test(rawLine)) {
+        // ---- Pipe-separated markdown table ----
+        const columns = rawLine
+          .split('|')
+          .map((c) => c.trim())
+          .filter((c) => c.length > 0);
+
+        // Detect header row: first row containing column-name keywords AND no time.
+        if (!headerSeen && i <= 2 && /artist|time|stage|day/i.test(rawLine) && !findTime(rawLine)) {
+          for (let j = 0; j < columns.length; j++) {
+            const header = columns[j].toLowerCase();
+            if (header === 'day' || header.startsWith('day')) columnIndices.day = j;
+            else if (header.includes('artist') || header.includes('dj') || header.includes('performer')) columnIndices.artist = j;
+            else if (header.includes('time') || header.includes('start')) columnIndices.time = j;
+            else if (header.includes('stage') || header.includes('location')) columnIndices.stage = j;
+          }
+          headerSeen = true;
+          continue;
+        }
+
+        if (columns.length < 3) continue;
+        artist = stripMdLinks(columns[columnIndices.artist] || '').trim();
+        timeStr = columns[columnIndices.time] || '';
+        stage = columns[columnIndices.stage] || '';
+        const dayRaw = columnIndices.day >= 0 ? (columns[columnIndices.day] || '').toLowerCase() : '';
+        day = dayMap[dayRaw] || '';
+      } else {
+        // ---- Plain text (no pipes) — anchor on the time pattern ----
+        const timeMatch = findTime(rawLine);
+        if (!timeMatch) continue; // not a data row (header/blurb/etc.)
+
+        const beforeTime = rawLine.substring(0, timeMatch.index).trim();
+        const afterTime = rawLine
+          .substring(timeMatch.index + timeMatch[0].length)
+          .replace(/^[|\s,\t-]+|[|\s,\t-]+$/g, '')
+          .trim();
+        timeStr = timeMatch[0];
+
+        const tokens = beforeTime.split(/\s+/).filter(Boolean);
+        if (tokens.length > 0) {
+          const firstClean = tokens[0].toLowerCase().replace(/[^a-z]/g, '');
+          if (dayMap[firstClean] && tokens.length > 1) {
+            day = dayMap[firstClean];
+            artist = tokens.slice(1).join(' ').trim();
+          } else {
+            artist = beforeTime;
           }
         }
-        continue;
+        artist = stripMdLinks(artist).trim();
+        stage = afterTime;
       }
 
-      // Process data rows
-      if (columns.length >= 3) {
-        const artist = stripMdLinks(columns[columnIndices.artist] || '').trim();
-        const timeStr = columns[columnIndices.time];
-        const stage = columns[columnIndices.stage];
-        const dayRaw = columnIndices.day >= 0 ? (columns[columnIndices.day] || '').toLowerCase() : '';
-        const day = dayMap[dayRaw] || '';
-
-        const time = convertToTimeFormat(timeStr);
-
-        if (time && artist && stage) {
-          parsedSets.push({
-            time,
-            artist,
-            stage,
-            day, // optional — used by processTableInput to compute the right calendar date
-          });
-        }
+      const time = convertToTimeFormat(timeStr);
+      if (time && artist && stage) {
+        parsedSets.push({
+          time,
+          artist,
+          stage,
+          day, // optional — used by processTableInput to compute the right calendar date
+        });
       }
     }
 
