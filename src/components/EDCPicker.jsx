@@ -1,4 +1,12 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, {
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useDeferredValue,
+  memo,
+} from 'react';
 import festivalSchedule from '../data/festivalSchedule';
 
 const NIGHTS = [
@@ -16,13 +24,56 @@ function fmtTime(s) {
   return min === '00' ? `${h}${suf}` : `${h}:${min}${suf}`;
 }
 
+// Pre-bucket the static roster once, outside the component, so it isn't
+// recomputed on every mount/render.
+const SETS_BY_NIGHT = (() => {
+  const m = { Fri: [], Sat: [], Sun: [] };
+  for (const s of festivalSchedule) m[s.day].push(s);
+  return m;
+})();
+
+// Each row is its own memoized component so a single toggle re-renders only
+// the row whose `picked` flipped — not all ~144 rows on the active night.
+// Without this, every tap was reconciling the entire visible list.
+const SetRow = memo(function SetRow({ set, picked, onToggle }) {
+  return (
+    <button
+      onClick={() => onToggle(set.id)}
+      className={`w-full text-left px-3 py-2.5 flex items-center gap-3 ${
+        picked
+          ? 'bg-edc-pink/15 active:bg-edc-pink/25'
+          : 'active:bg-edc-purple/15'
+      }`}
+    >
+      <div
+        className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center text-[11px] font-bold ${
+          picked
+            ? 'bg-edc-pink border-edc-pink text-black'
+            : 'border-white/30'
+        }`}
+      >
+        {picked ? '✓' : ''}
+      </div>
+      <div className="shrink-0 w-14 text-xs text-white/50 tabular-nums">
+        {fmtTime(set.startTime)}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-white truncate">{set.artist}</div>
+        <div className="text-[11px] text-white/40 truncate">
+          {set.stage} · ends {fmtTime(set.endTime)}
+        </div>
+      </div>
+    </button>
+  );
+});
+
 /**
  * EDCPicker — modal for tapping sets out of the hardcoded EDC 2026 roster.
  *
  * Props:
  *   open: boolean
  *   initialSelection: number[] (set IDs already picked, optional)
- *   title: string (header text — e.g. "Pick your sets" or "Add to schedule")
+ *   title: string (header text — e.g. "Pick your sets" or "Edit schedule")
  *   onSave: (sets: ScheduleSet[]) => void   // sets in {artist, stage, start} shape
  *   onCancel: () => void
  */
@@ -38,6 +89,10 @@ export default function EDCPicker({
   const [picked, setPicked] = useState(() => new Set(initialSelection));
   const listRef = useRef(null);
 
+  // useDeferredValue keeps typing snappy: input updates immediately, but
+  // expensive filtering happens at lower priority.
+  const deferredQuery = useDeferredValue(query);
+
   // Reset internal state when the picker is opened
   useEffect(() => {
     if (open) {
@@ -49,7 +104,7 @@ export default function EDCPicker({
   }, [open]);
 
   // Lock background scroll while the modal is open. Without this, iOS Safari
-  // lets the underlying page scroll behind the modal — confusing and ugly.
+  // lets the underlying page scroll behind the modal.
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -59,7 +114,7 @@ export default function EDCPicker({
     };
   }, [open]);
 
-  // Close on Escape — quick keyboard escape hatch on desktop.
+  // Close on Escape
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => {
@@ -69,39 +124,33 @@ export default function EDCPicker({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onCancel]);
 
-  const setsByNight = useMemo(() => {
-    const m = { Fri: [], Sat: [], Sun: [] };
-    for (const s of festivalSchedule) m[s.day].push(s);
-    return m;
-  }, []);
-
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = setsByNight[activeNight];
-    if (q) {
-      list = list.filter(
-        (s) =>
-          s.artist.toLowerCase().includes(q) ||
-          s.stage.toLowerCase().includes(q),
-      );
-    }
-    return list;
-  }, [setsByNight, activeNight, query]);
+    const q = deferredQuery.trim().toLowerCase();
+    const list = SETS_BY_NIGHT[activeNight];
+    if (!q) return list;
+    return list.filter(
+      (s) =>
+        s.artist.toLowerCase().includes(q) ||
+        s.stage.toLowerCase().includes(q),
+    );
+  }, [activeNight, deferredQuery]);
 
   useEffect(() => {
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [activeNight]);
 
-  function toggle(id) {
+  // Stable toggle reference — required for SetRow's memo to skip re-renders
+  // of rows whose picked state didn't change.
+  const toggle = useCallback((id) => {
     setPicked((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
-  function handleSave() {
+  const handleSave = useCallback(() => {
     const pickedSets = festivalSchedule
       .filter((s) => picked.has(s.id))
       .map((s) => ({
@@ -112,18 +161,22 @@ export default function EDCPicker({
       }))
       .sort((a, b) => new Date(a.start) - new Date(b.start));
     onSave(pickedSets);
-  }
+  }, [picked, onSave]);
+
+  // Recomputed only when the picked set actually changes, not on every render.
+  const totalsByNight = useMemo(() => {
+    const t = { Fri: 0, Sat: 0, Sun: 0 };
+    for (const id of picked) {
+      const day = festivalSchedule[id]?.day;
+      if (day) t[day]++;
+    }
+    return t;
+  }, [picked]);
 
   if (!open) return null;
 
-  const totalsByNight = {
-    Fri: [...picked].filter((id) => festivalSchedule[id]?.day === 'Fri').length,
-    Sat: [...picked].filter((id) => festivalSchedule[id]?.day === 'Sat').length,
-    Sun: [...picked].filter((id) => festivalSchedule[id]?.day === 'Sun').length,
-  };
-
   return (
-    <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-stretch sm:items-center justify-center sm:p-4 animate-fadeIn">
+    <div className="fixed inset-0 z-50 bg-black/90 flex items-stretch sm:items-center justify-center sm:p-4 animate-fadeIn">
       <div className="w-full sm:max-w-2xl bg-edc-black border-0 sm:border sm:border-edc-purple/40 sm:rounded-2xl shadow-2xl flex flex-col max-h-screen sm:max-h-[90vh]">
         {/* Header */}
         <div className="px-4 pt-4 pb-3 border-b border-edc-purple/20">
@@ -151,7 +204,7 @@ export default function EDCPicker({
               <button
                 key={n.key}
                 onClick={() => setActiveNight(n.key)}
-                className={`flex-1 py-2 px-1 rounded-md text-sm font-medium transition-all ${
+                className={`flex-1 py-2 px-1 rounded-md text-sm font-medium ${
                   activeNight === n.key
                     ? 'bg-edc-pink/20 text-edc-pink border border-edc-pink/60'
                     : 'text-white/50 hover:text-white border border-transparent'
@@ -177,49 +230,27 @@ export default function EDCPicker({
           </div>
         </div>
 
-        {/* List */}
-        <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-2">
+        {/* List — `contain: content` and `will-change: transform` reduce paint
+            cost while scrolling a long list of rows. */}
+        <div
+          ref={listRef}
+          className="flex-1 overflow-y-auto px-3 py-2"
+          style={{ contain: 'content' }}
+        >
           {filtered.length === 0 ? (
             <div className="text-center text-white/40 py-12 text-sm">
               No sets match "{query}".
             </div>
           ) : (
             <div className="rounded-lg overflow-hidden divide-y divide-edc-purple/10 border border-edc-purple/20">
-              {filtered.map((s) => {
-                const isPicked = picked.has(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => toggle(s.id)}
-                    className={`w-full text-left px-3 py-2.5 flex items-center gap-3 transition-colors ${
-                      isPicked
-                        ? 'bg-edc-pink/15 hover:bg-edc-pink/20'
-                        : 'hover:bg-edc-purple/10'
-                    }`}
-                  >
-                    <div
-                      className={`shrink-0 w-5 h-5 rounded-md border-2 flex items-center justify-center text-[11px] font-bold ${
-                        isPicked
-                          ? 'bg-edc-pink border-edc-pink text-black'
-                          : 'border-white/30'
-                      }`}
-                    >
-                      {isPicked ? '✓' : ''}
-                    </div>
-                    <div className="shrink-0 w-14 text-xs text-white/50 tabular-nums">
-                      {fmtTime(s.startTime)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white truncate">
-                        {s.artist}
-                      </div>
-                      <div className="text-[11px] text-white/40 truncate">
-                        {s.stage} · ends {fmtTime(s.endTime)}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+              {filtered.map((s) => (
+                <SetRow
+                  key={s.id}
+                  set={s}
+                  picked={picked.has(s.id)}
+                  onToggle={toggle}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -245,7 +276,7 @@ export default function EDCPicker({
             <button
               onClick={handleSave}
               disabled={picked.size === 0}
-              className="px-5 py-2 rounded-md bg-gradient-to-r from-edc-pink to-edc-purple disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 text-white font-bold text-sm shadow-[0_0_15px_rgba(255,0,255,0.3)] disabled:shadow-none transition-all"
+              className="px-5 py-2 rounded-md bg-gradient-to-r from-edc-pink to-edc-purple disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 text-white font-bold text-sm shadow-[0_0_15px_rgba(255,0,255,0.3)] disabled:shadow-none"
             >
               Save schedule →
             </button>
