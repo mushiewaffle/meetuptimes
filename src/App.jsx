@@ -264,6 +264,10 @@ function App() {
   // "How does this work?" help modal — accessible from the top-right ? button.
   const [showHelp, setShowHelp] = useState(false);
 
+  // Reset Everything confirmation modal — replaces window.confirm() which
+  // is ugly on mobile and blocks programmatic UI testing.
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
   const handleOpenPickerForNew = () => {
     setPickerTargetIdx(null);
     setPickerOpen(true);
@@ -1165,16 +1169,16 @@ function App() {
   };
   
   /**
-   * Reset the entire app to initial state
+   * Reset the entire app to initial state.
+   * The actual reset runs after the user confirms in the inline modal —
+   * this entry point just opens the modal.
    */
   const resetApp = () => {
-    // Show confirmation dialog before resetting
-    const confirmReset = window.confirm(
-      "Are you sure you want to reset everything? This will delete all schedules and meetup plans."
-    );
-    
-    if (!confirmReset) return;
-    
+    setShowResetConfirm(true);
+  };
+
+  const performReset = () => {
+    setShowResetConfirm(false);
     try {
       // Clear all state
       setSchedules([]);
@@ -2419,6 +2423,39 @@ If the image isn't readable, reply exactly:
           </div>
         </div>
       </div>
+
+      {/* Reset Everything confirmation modal — inline, themed, dismissable
+          via X / Cancel / backdrop. Replaces native window.confirm(). */}
+      {showResetConfirm && (
+        <div
+          onClick={() => setShowResetConfirm(false)}
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-edc-black border border-red-500/40 rounded-2xl p-5 shadow-2xl"
+          >
+            <h2 className="text-lg font-bold text-white mb-2">Reset everything?</h2>
+            <p className="text-sm text-white/70 mb-5 leading-relaxed">
+              This will delete all your schedules and meetup plans. This cannot be undone.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="py-2.5 rounded-md border border-edc-purple/40 hover:bg-edc-purple/10 text-white text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performReset}
+                className="py-2.5 rounded-md bg-red-500/80 hover:bg-red-500 text-white text-sm font-bold transition-colors"
+              >
+                Reset everything
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* "How does this work?" modal — concise 3-step walkthrough plus
           a small FAQ-style line about the meetup output. Dismissed via X
