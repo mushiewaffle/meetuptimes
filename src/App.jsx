@@ -2292,97 +2292,106 @@ If the image isn't readable, reply exactly:
               <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">EDC meetup plan</h2>
               <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
             
-              <div className="space-y-6">
-                {meetupPlan.map((meetup, idx) => (
-                  <div 
-                    key={meetup.id || idx}
-                    className={`flex flex-col border-l-2 px-1 py-0 my-1 rounded-r-md ${meetup.isRecommended ? 'border-green-500/60 bg-green-900/5' : 'border-edc-purple/60 bg-edc-purple/5'}`}
-                  >
-                    <div className="flex justify-between items-center pl-4 pt-0">
-                      <h3 className="text-edc-blue/90 font-medium text-lg mt-0 pt-0">{`#${idx + 1}: Before ${meetup.beforeCommonArtist || 'Next Artist'} @ ${meetup.beforeStage || 'Unknown Stage'}`}</h3>
-                    </div>
-
-                    <div className="flex items-center pl-4 mt-0 pt-0 pb-0 gap-2 flex-wrap">
-                      {getFestivalNight(meetup.start) && (
-                        <span className="text-[10px] font-orbitron tracking-widest text-edc-blue uppercase">
-                          {getFestivalNight(meetup.start)} Night
+              <div className="space-y-4 text-left">
+                {meetupPlan.map((meetup, idx) => {
+                  const night = getFestivalNight(meetup.start);
+                  return (
+                    <div
+                      key={meetup.id || idx}
+                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-3.5 text-left"
+                    >
+                      {/* Header: meetup index + festival-night badge */}
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-edc-pink/60 text-xs font-orbitron tracking-wider">
+                          #{idx + 1}
                         </span>
-                      )}
-                      <p className="text-edc-purple/90 mb-0">
-                        {formatTime(meetup.start)} - {formatTime(meetup.end)}
-                        <span className="text-white/70 text-xs ml-2">({formatDuration(meetup.start, meetup.end)})</span>
-                      </p>
-                    </div>
-                  
-                    <div className="flex items-start pl-4 mt-0 pt-0 pb-0">
-                      <span className="text-edc-purple text-xs">
-                        {meetup.schedules.join(', ')}
-                      </span>
-                    </div>
-                  
-                    {/* Location section - editable */}
-                    <div className="flex items-center pl-4 mt-0 pt-1 pb-2">
-                      {editingLocationIndex === idx ? (
-                        <div className="flex items-center w-full pr-4">
-                          <input 
-                            type="text" 
-                            value={editingLocation}
-                            onChange={(e) => setEditingLocation(e.target.value)}
-                            placeholder="Enter meetup spot..."
-                            className="bg-black/30 border border-edc-purple/30 text-white/90 text-sm rounded px-2 py-1 w-full"
-                            autoFocus
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveLocation();
-                              } else if (e.key === 'Escape') {
-                                cancelEditingLocation();
-                              }
-                            }}
-                          />
+                        {night && (
+                          <span className="text-[10px] font-orbitron tracking-widest text-edc-blue uppercase">
+                            {night} Night
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Time — primary visual focus, big and bold */}
+                      <div className="flex items-baseline gap-2 flex-wrap mb-3">
+                        <span className="text-xl sm:text-2xl font-bold text-white tabular-nums leading-none">
+                          {formatTime(meetup.start)}
+                        </span>
+                        <span className="text-edc-purple/80 text-sm leading-none">
+                          – {formatTime(meetup.end)}
+                        </span>
+                        <span className="text-white/40 text-xs leading-none">
+                          ({formatDuration(meetup.start, meetup.end)})
+                        </span>
+                      </div>
+
+                      {/* Context: artist + stage, smaller, can wrap naturally */}
+                      <div className="text-sm text-white/80 leading-snug mb-2">
+                        Meet before{' '}
+                        <span className="text-edc-pink font-semibold">
+                          {meetup.beforeCommonArtist || 'next artist'}
+                        </span>
+                        {' '}at{' '}
+                        <span className="text-edc-blue">
+                          {meetup.beforeStage || 'unknown stage'}
+                        </span>
+                      </div>
+
+                      {/* Who's joining */}
+                      <div className="text-xs text-white/50 mb-3">
+                        With: <span className="text-white/80">{meetup.schedules.join(' · ')}</span>
+                      </div>
+
+                      {/* Meetup spot — editable */}
+                      <div className="pt-2 border-t border-edc-purple/15">
+                        {editingLocationIndex === idx ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={editingLocation}
+                              onChange={(e) => setEditingLocation(e.target.value)}
+                              placeholder="Enter meetup spot…"
+                              className="flex-1 bg-black/30 border border-edc-purple/30 text-white/90 text-sm rounded px-2 py-1 focus:outline-none focus:border-edc-pink"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') saveLocation();
+                                else if (e.key === 'Escape') cancelEditingLocation();
+                              }}
+                            />
+                            <button
+                              onClick={saveLocation}
+                              className="px-3 py-1 bg-edc-purple/60 hover:bg-edc-purple/80 rounded text-white text-xs"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        ) : meetup.customLocation ? (
                           <button
-                            onClick={saveLocation}
-                            className="ml-2 px-3 py-1 bg-edc-purple/60 rounded text-white text-xs hover:bg-edc-purple/80 transition-colors"
+                            onClick={() => startEditingLocation(idx)}
+                            className="w-full text-left flex items-center gap-2 text-sm text-white/80 hover:text-white transition-colors"
                           >
-                            Save
+                            <span className="text-edc-blue/70">📍</span>
+                            <span className="flex-1 truncate">{meetup.customLocation}</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 text-edc-blue/50 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
                           </button>
-                        </div>
-                      ) : (
-                        <div className="location-container flex items-center w-full text-white/80 leading-none">
-                          <span className="location-icon text-edc-blue/70 mr-2" style={{ fontSize: '15px', lineHeight: 1 }}>📍</span>
-                          {meetup.customLocation ? (
-                            <span 
-                              className="location-text cursor-pointer hover:text-white transition-colors" 
-                              style={{verticalAlign: 'middle', display: 'inline', lineHeight: '1'}}
-                              onClick={() => startEditingLocation(idx)}
-                            >
-                              {meetup.customLocation}
-                            </span>
-                          ) : (
-                            <button 
-                              onClick={() => startEditingLocation(idx)}
-                              className="text-edc-pink/50 text-sm hover:text-edc-pink/70 transition-colors flex items-center"
-                            >
-                              <span className="mr-1">Add meetup spot</span>
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                          )}
-                          {meetup.customLocation && (
-                            <button 
-                              onClick={() => startEditingLocation(idx)}
-                              className="ml-2 text-edc-blue/50 hover:text-edc-blue/70 transition-colors"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      )}
+                        ) : (
+                          <button
+                            onClick={() => startEditingLocation(idx)}
+                            className="flex items-center gap-2 text-sm text-edc-pink/60 hover:text-edc-pink/90 transition-colors"
+                          >
+                            <span className="text-edc-blue/70">📍</span>
+                            <span>Add meetup spot</span>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             
