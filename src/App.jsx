@@ -104,7 +104,14 @@ function App() {
       let timeStr = '';
       let stage = '';
 
-      if (hasPipes && /\|/.test(rawLine)) {
+      // PIPES TAKE PRIORITY. If the input contains ANY pipe markdown,
+      // we treat the whole input as pipe-formatted. Lines that have
+      // pipes parse normally; lines without pipes are SKIPPED (rather
+      // than falling back to plain-text parsing, which could produce
+      // wrong results from prose, comments, or stray text the GPT
+      // included around the table).
+      if (hasPipes) {
+        if (!/\|/.test(rawLine)) continue;
         // ---- Pipe-separated markdown table ----
         const columns = rawLine
           .split('|')
@@ -131,7 +138,7 @@ function App() {
         const dayRaw = columnIndices.day >= 0 ? (columns[columnIndices.day] || '').toLowerCase() : '';
         day = dayMap[dayRaw] || '';
       } else {
-        // ---- Plain text (no pipes) — anchor on the time pattern ----
+        // ---- Plain text (no pipes anywhere in input) — anchor on the time pattern ----
         const timeMatch = findTime(rawLine);
         if (!timeMatch) continue; // not a data row (header/blurb/etc.)
 
@@ -1968,12 +1975,34 @@ If the image isn't readable, reply exactly:
                               </div>
                             )}
                             
+                            {/* Live preview count — gives the user a confidence
+                                signal BEFORE they commit. If parsing produced 0
+                                rows from non-empty input, the warning makes it
+                                obvious that the format wasn't recognized so they
+                                can fix it without creating an empty schedule. */}
+                            {tableInput.trim() && (() => {
+                              const previewCount = parseTableInput(tableInput).length;
+                              return (
+                                <div className="mt-3 text-xs text-center">
+                                  {previewCount > 0 ? (
+                                    <span className="text-edc-blue">
+                                      ✓ Detected {previewCount} {previewCount === 1 ? 'set' : 'sets'} ready to add
+                                    </span>
+                                  ) : (
+                                    <span className="text-red-400/80">
+                                      ⚠ No sets detected. Make sure each row has an artist, time (e.g. 2:30 PM), and stage.
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
                             {/* Add Schedule button */}
-                            <div className="flex justify-center mt-4">
+                            <div className="flex justify-center mt-3">
                               <button
                                 onClick={processTableInput}
-                                disabled={!tableInput.trim() || isProcessingTable}
-                                className="bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20 disabled:opacity-50 disabled:bg-gray-700 text-white text-sm font-medium py-3 px-8 rounded-md transition-all duration-200 w-full"
+                                disabled={!tableInput.trim() || isProcessingTable || parseTableInput(tableInput).length === 0}
+                                className="bg-gradient-to-r from-edc-pink to-edc-purple hover:opacity-90 hover:shadow-md hover:shadow-edc-pink/20 disabled:opacity-30 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium py-3 px-8 rounded-md transition-all duration-200 w-full"
                               >
                                 {isProcessingTable ? 'Processing...' : 'Add Schedule'}
                               </button>
