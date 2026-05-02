@@ -271,6 +271,21 @@ function App() {
     setPickerOpen(true);
   };
 
+  // Resolve the IDs of festivalSchedule entries already in a saved schedule, so
+  // the picker can pre-check those rows when the user re-opens it to edit.
+  // Matches by start ISO + artist + stage (the natural composite key).
+  const getInitialSelectionFromSchedule = (schedule) => {
+    if (!schedule || !Array.isArray(schedule.sets)) return [];
+    const ids = [];
+    for (const s of schedule.sets) {
+      const match = festivalSchedule.find(
+        (f) => f.start === s.start && f.artist === s.artist && f.stage === s.stage,
+      );
+      if (match) ids.push(match.id);
+    }
+    return ids;
+  };
+
   const handleEDCPickerSave = (sets) => {
     setPickerOpen(false);
     if (pickerTargetIdx === null) {
@@ -281,22 +296,14 @@ function App() {
         schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`;
       setSchedules([{ name: scheduleName, sets }, ...schedules]);
     } else {
-      // Merge into the existing schedule, deduped by start+artist+stage
+      // Edit mode: the picker was pre-filled with the schedule's existing sets,
+      // so whatever is selected on save IS the schedule's new state. Replace,
+      // don't merge — otherwise unchecking would silently fail to remove sets.
       const updated = [...schedules];
       const target = updated[pickerTargetIdx];
       if (target) {
-        const existing = Array.isArray(target.sets) ? target.sets : [];
-        const seen = new Set(existing.map((s) => `${s.start}|${s.artist}|${s.stage}`));
-        const merged = [...existing];
-        for (const s of sets) {
-          const key = `${s.start}|${s.artist}|${s.stage}`;
-          if (!seen.has(key)) {
-            merged.push(s);
-            seen.add(key);
-          }
-        }
-        merged.sort((a, b) => new Date(a.start) - new Date(b.start));
-        target.sets = merged;
+        const sortedSets = [...sets].sort((a, b) => new Date(a.start) - new Date(b.start));
+        target.sets = sortedSets;
         setSchedules(updated);
       }
     }
@@ -1861,50 +1868,49 @@ If the image isn't readable, reply exactly:
                                   </div>
                                 </div>
                               ) : (
-                                // Normal display of an existing set
-                                <div 
-                                  key={setIdx} 
-                                  className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 bg-black/30 rounded-sm border-l-2 border-edc-purple/30 hover:bg-black/40 cursor-pointer transition-colors"
+                                // Normal display of an existing set.
+                                // Layout: [Day badge] [Time] [Artist + Stage stacked] [edit] [delete]
+                                // — fixed-width left columns + flexible artist/stage area + fixed-width
+                                // actions ensures rows align cleanly regardless of artist length.
+                                <div
+                                  key={setIdx}
+                                  className="flex items-center gap-2 py-2 px-2 text-sm bg-black/30 rounded-md border-l-2 border-edc-purple/40 hover:bg-black/40 transition-colors text-left"
                                 >
-                                  <div 
-                                    className="text-edc-pink font-medium truncate text-center cursor-pointer"
-                                    onClick={() => startEditingSet(idx, setIdx, 'artist')}
-                                  >{set.artist}</div>
-                                  <div 
-                                    className="text-white text-center cursor-pointer"
-                                    onClick={() => startEditingSet(idx, setIdx, 'time')}
-                                  >{formatTime(set.start)}</div>
-                                  <div className="text-edc-blue flex items-center">
-                                    <div 
-                                      className="text-center truncate w-[70%] cursor-pointer"
-                                      onClick={() => startEditingSet(idx, setIdx, 'stage')}
-                                    >{set.stage}</div>
-                                    <div className="flex shrink-0 ml-auto">
-                                      <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          startEditingSet(idx, setIdx);
-                                        }}
-                                        className="text-edc-purple hover:text-edc-blue mx-1" 
-                                        title="Edit Set"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                        </svg>
-                                      </button>
-                                      <button 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          deleteSet(idx, setIdx);
-                                        }}
-                                        className="text-red-400 hover:text-red-300 ml-1" 
-                                        title="Delete Set"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                        </svg>
-                                      </button>
-                                    </div>
+                                  <div className="shrink-0 w-9 text-[10px] font-orbitron tracking-widest uppercase text-edc-blue/80 text-center">
+                                    {getFestivalNight(set.start) || '—'}
+                                  </div>
+                                  <div className="shrink-0 w-16 text-xs text-white tabular-nums text-right">
+                                    {formatTime(set.start)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-edc-pink font-medium truncate leading-tight">{set.artist}</div>
+                                    <div className="text-edc-blue/70 text-[11px] truncate leading-tight">{set.stage}</div>
+                                  </div>
+                                  <div className="shrink-0 flex items-center">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenPickerForExisting(idx);
+                                      }}
+                                      className="text-edc-purple hover:text-edc-blue p-1.5 rounded hover:bg-edc-purple/10 transition-colors"
+                                      title="Edit schedule (re-open picker)"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteSet(idx, setIdx);
+                                      }}
+                                      className="text-red-400/80 hover:text-red-400 p-1.5 rounded hover:bg-red-900/20 transition-colors"
+                                      title="Remove this set"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
                                   </div>
                                 </div>
                               )
@@ -2043,9 +2049,9 @@ If the image isn't readable, reply exactly:
                                 </div>
                             )}
                             
-                            {/* Add more sets — opens the EDC picker for this schedule
-                                rather than the legacy free-text form (since EDC is hardcoded,
-                                tap-from-list is faster and avoids typos). */}
+                            {/* Edit / add — opens the EDC picker pre-filled with this
+                                schedule's current sets. Same modal does both: tap to add,
+                                untap to remove, save to apply. */}
                             {isAddingSetToSchedule !== idx && (
                               <button
                                 data-add-set-button={idx}
@@ -2054,13 +2060,13 @@ If the image isn't readable, reply exactly:
                                   e.preventDefault();
                                   handleOpenPickerForExisting(idx);
                                 }}
-                                className="mt-2 text-xs text-edc-blue hover:text-edc-purple flex items-center mx-auto px-3 py-1 bg-edc-blue/10 hover:bg-edc-blue/15 rounded-md transition-all"
-                                title="Add more sets from the EDC lineup"
+                                className="mt-2 text-xs text-edc-blue hover:text-edc-purple flex items-center mx-auto px-3 py-1.5 bg-edc-blue/10 hover:bg-edc-blue/15 rounded-md transition-all"
+                                title="Edit this schedule's sets in the picker"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                 </svg>
-                                Add sets from lineup
+                                Edit sets in lineup
                               </button>
                             )}
                             
@@ -2412,13 +2418,20 @@ If the image isn't readable, reply exactly:
         </div>
       </div>
 
-      {/* EDC roster picker — modal for tap-from-list set selection */}
+      {/* EDC roster picker — modal for tap-from-list set selection. When
+          editing an existing schedule, pre-checks its current sets so the user
+          can deselect to remove or tap others to add. */}
       <EDCPicker
         open={pickerOpen}
         title={
           pickerTargetIdx === null
             ? 'Pick your sets'
-            : `Add to ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
+            : `Edit ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
+        }
+        initialSelection={
+          pickerTargetIdx !== null
+            ? getInitialSelectionFromSchedule(schedules[pickerTargetIdx])
+            : []
         }
         onSave={handleEDCPickerSave}
         onCancel={() => setPickerOpen(false)}
