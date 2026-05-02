@@ -1868,49 +1868,30 @@ If the image isn't readable, reply exactly:
                                   </div>
                                 </div>
                               ) : (
-                                // Normal display of an existing set.
-                                // Layout: [Day badge] [Time] [Artist + Stage stacked] [edit] [delete]
-                                // — fixed-width left columns + flexible artist/stage area + fixed-width
-                                // actions ensures rows align cleanly regardless of artist length.
+                                // Display layout (no per-row controls — all editing
+                                // happens through the schedule's "Edit sets" button).
+                                // Note: explicit `text-left` is required because
+                                // App.css sets `text-align: center` globally on #root.
                                 <div
                                   key={setIdx}
-                                  className="flex items-center gap-2 py-2 px-2 text-sm bg-black/30 rounded-md border-l-2 border-edc-purple/40 hover:bg-black/40 transition-colors text-left"
+                                  className="flex items-center gap-3 py-2.5 px-3 bg-black/30 rounded-md border-l-2 border-edc-purple/40"
                                 >
-                                  <div className="shrink-0 w-9 text-[10px] font-orbitron tracking-widest uppercase text-edc-blue/80 text-center">
-                                    {getFestivalNight(set.start) || '—'}
+                                  <div className="shrink-0 w-20 text-center">
+                                    <div className="text-[10px] font-orbitron tracking-widest uppercase text-edc-blue/80 leading-tight">
+                                      {getFestivalNight(set.start) || '—'}
+                                    </div>
+                                    <div className="text-sm text-white tabular-nums leading-tight mt-0.5 font-semibold whitespace-nowrap">
+                                      {formatTime(set.start)}
+                                    </div>
                                   </div>
-                                  <div className="shrink-0 w-16 text-xs text-white tabular-nums text-right">
-                                    {formatTime(set.start)}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="text-edc-pink font-medium truncate leading-tight">{set.artist}</div>
-                                    <div className="text-edc-blue/70 text-[11px] truncate leading-tight">{set.stage}</div>
-                                  </div>
-                                  <div className="shrink-0 flex items-center">
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenPickerForExisting(idx);
-                                      }}
-                                      className="text-edc-purple hover:text-edc-blue p-1.5 rounded hover:bg-edc-purple/10 transition-colors"
-                                      title="Edit schedule (re-open picker)"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                      </svg>
-                                    </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        deleteSet(idx, setIdx);
-                                      }}
-                                      className="text-red-400/80 hover:text-red-400 p-1.5 rounded hover:bg-red-900/20 transition-colors"
-                                      title="Remove this set"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                    </button>
+                                  <div className="flex-1 min-w-0 text-left">
+                                    <div className="text-edc-pink font-semibold leading-tight truncate text-sm">{set.artist}</div>
+                                    <div className="text-edc-blue/70 text-[11px] leading-tight truncate mt-0.5">
+                                      {set.stage}
+                                      {set.end && (
+                                        <span className="text-white/40 ml-1.5">· ends {formatTime(set.end)}</span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               )
@@ -2049,9 +2030,10 @@ If the image isn't readable, reply exactly:
                                 </div>
                             )}
                             
-                            {/* Edit / add — opens the EDC picker pre-filled with this
-                                schedule's current sets. Same modal does both: tap to add,
-                                untap to remove, save to apply. */}
+                            {/* Edit sets — the single, prominent edit action for this
+                                schedule. Opens the picker pre-filled; tap to add,
+                                untap to remove, save to apply. With per-row buttons
+                                gone, this is now the one obvious affordance. */}
                             {isAddingSetToSchedule !== idx && (
                               <button
                                 data-add-set-button={idx}
@@ -2060,13 +2042,13 @@ If the image isn't readable, reply exactly:
                                   e.preventDefault();
                                   handleOpenPickerForExisting(idx);
                                 }}
-                                className="mt-2 text-xs text-edc-blue hover:text-edc-purple flex items-center mx-auto px-3 py-1.5 bg-edc-blue/10 hover:bg-edc-blue/15 rounded-md transition-all"
+                                className="mt-3 w-full text-sm text-edc-blue hover:text-white flex items-center justify-center gap-1.5 px-3 py-2 bg-edc-blue/10 hover:bg-edc-blue/20 border border-edc-blue/30 hover:border-edc-blue/60 rounded-md transition-all font-medium"
                                 title="Edit this schedule's sets in the picker"
                               >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                 </svg>
-                                Edit sets in lineup
+                                Edit sets
                               </button>
                             )}
                             
@@ -2278,7 +2260,7 @@ If the image isn't readable, reply exactly:
                 </button>
               </div>
             
-              <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">Your Meetup Plan</h2>
+              <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">Your EDC Meetup Plan</h2>
               <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
             
               <div className="space-y-6">
