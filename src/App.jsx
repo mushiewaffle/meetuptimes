@@ -1443,7 +1443,7 @@ function App() {
                        makes the next step impossible to miss)
                     – 2+ schedules: subtle teal "Add Another Schedule" (just an option) */}
                 {!showScheduleOptions ? (
-                  <div className="order-2 flex justify-center mt-4">
+                  <div className="order-3 flex justify-center mt-4">
                     <button
                       onClick={handleShowScheduleOptions}
                       className={
@@ -1463,7 +1463,7 @@ function App() {
                     </button>
                   </div>
                 ) : (
-                   <div className="order-2 border border-edc-purple/30 rounded-lg mt-4 overflow-hidden bg-black/30">
+                   <div className="order-3 border border-edc-purple/30 rounded-lg mt-4 overflow-hidden bg-black/30">
                      <div className="p-4">
                          {showGPTSubscriptionOptions ? (
                           <>
@@ -2090,6 +2090,29 @@ If the image isn't readable, reply exactly:
                     </li>
                   ))}
                 </ul>
+
+                {/* "No overlap" warning — order-2 sits between schedules
+                    (order-1) and Add button (order-3). */}
+                {schedules.length >= 2 && noGapsFound && (
+                  <div className="order-2 mt-4 text-center py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
+                    <span className="text-edc-purple text-xs font-medium">
+                      No overlap yet — try adding a shared set in both schedules.
+                    </span>
+                  </div>
+                )}
+
+                {/* Find Meetup Times — primary action for a 2+ schedule
+                    user. order-2 places it directly under the schedules and
+                    above the secondary "Add Another" button (order-3). */}
+                {schedules.length >= 2 && (
+                  <button
+                    onClick={findMeetupGaps}
+                    disabled={noGapsFound}
+                    className="order-2 mt-4 w-full py-3 rounded-md text-white font-bold text-base font-orbitron tracking-wider transition-all bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 animate-glow disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Find Meetup Times →
+                  </button>
+                )}
               </div>
             
             <div className="mt-4"></div>
@@ -2107,31 +2130,9 @@ If the image isn't readable, reply exactly:
         </div>
       )}
 
-      {/* "No overlap" warning is the only hint we still show down here. The
-          "you need a friend's schedule" prompt is now communicated by the
-          prominent gradient Add button right above this region — no need to
-          repeat it as a banner. */}
-      {schedules.length >= 2 && noGapsFound && (
-        <div className="text-center mb-3 py-1.5 px-2 bg-edc-purple/10 border border-edc-purple/30 rounded-md">
-          <div className="flex items-center justify-center">
-            <span className="text-edc-purple text-xs font-medium">
-              No overlap yet — try adding a shared set in both schedules.
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Find Meetup Times — only render once 2+ schedules exist. Hidden in the
-          empty state to keep the first screen uncluttered. */}
-      {schedules.length >= 2 && (
-        <button
-          onClick={findMeetupGaps}
-          disabled={noGapsFound}
-          className="w-full py-3 rounded-md text-white font-bold text-base font-orbitron tracking-wider transition-all bg-gradient-to-r from-edc-blue to-edc-pink hover:opacity-90 animate-glow disabled:from-gray-700 disabled:to-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Find Meetup Times →
-        </button>
-      )}
+      {/* (Find Meetup Times button + no-overlap warning moved inside the
+          flex container above so they sit between the schedules and the Add
+          button.) */}
             </div>
             {/* Tip Jar removed from here and moved to appear on all pages */}
           </div>
