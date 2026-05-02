@@ -2261,29 +2261,26 @@ If the image isn't readable, reply exactly:
                   return (
                     <div
                       key={meetup.id || idx}
-                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-4 text-left meetup-card"
+                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-3 text-left meetup-card"
                     >
-                      {/* Header: meetup index + festival-night badge */}
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-edc-pink/60 text-xs font-orbitron tracking-wider">
-                          #{idx + 1}
-                        </span>
+                      {/* Time + day on a single header line. The day badge
+                          sits right-aligned with the time so the card opens
+                          with one tight, scannable row instead of a separate
+                          "#1 / SAT NIGHT" preamble. */}
+                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                        <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                          <span className="text-lg font-bold text-white tabular-nums leading-none">
+                            {formatTime(meetup.start)} – {formatTime(meetup.end)}
+                          </span>
+                          <span className="text-white/40 text-xs leading-none">
+                            · {formatDuration(meetup.start, meetup.end)}
+                          </span>
+                        </div>
                         {night && (
-                          <span className="text-[10px] font-orbitron tracking-widest text-edc-blue uppercase">
-                            {night} Night
+                          <span className="shrink-0 text-[11px] font-orbitron tracking-widest text-edc-blue uppercase">
+                            {night}
                           </span>
                         )}
-                      </div>
-
-                      {/* Time — primary visual focus, sized down so it doesn't
-                          dominate the card on mobile. */}
-                      <div className="flex items-baseline gap-2 flex-wrap mb-2">
-                        <span className="text-lg font-bold text-white tabular-nums leading-none">
-                          {formatTime(meetup.start)} – {formatTime(meetup.end)}
-                        </span>
-                        <span className="text-white/40 text-xs leading-none">
-                          · {formatDuration(meetup.start, meetup.end)}
-                        </span>
                       </div>
 
                       <div className="leading-snug">
@@ -2292,14 +2289,14 @@ If the image isn't readable, reply exactly:
                           {meetup.beforeCommonArtist || 'next artist'}
                         </span>
                       </div>
-                      <div className="flex items-baseline gap-1.5 mt-1 mb-2">
+                      <div className="flex items-baseline gap-1.5 mt-0.5">
                         <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
                         <span className="text-edc-blue/80 text-xs">
                           {meetup.beforeStage || 'unknown stage'}
                         </span>
                       </div>
 
-                      <div className="text-xs text-white/60 mb-2">
+                      <div className="text-xs text-white/60 mt-1.5">
                         {meetup.schedules.join(' · ')}
                       </div>
 
@@ -2308,7 +2305,7 @@ If the image isn't readable, reply exactly:
                           When filled, the text is in a non-button so html2canvas
                           captures it (App.css hides every <button> in screenshot
                           mode). */}
-                      <div className="pt-1.5 border-t border-edc-purple/15">
+                      <div className="mt-2 pt-2 border-t border-edc-purple/15">
                         {editingLocationIndex === idx ? (
                           <div className="flex items-center gap-2">
                             <input
