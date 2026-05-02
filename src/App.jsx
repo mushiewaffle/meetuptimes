@@ -75,11 +75,29 @@ function App() {
     let columnIndices = { day: -1, artist: 0, time: 1, stage: 2 };
     let headerSeen = false;
 
+    // Track "current day" from standalone day-header lines like "Sunday:"
+    // or "SUN —". Subsequent rows that don't include their own day prefix
+    // inherit this context.
+    let currentDayContext = '';
+    const justDayHeaderRegex = /^(friday|saturday|sunday|fri|sat|sun)\b\s*[:\-—–]?\s*$/i;
+
+    // Punctuation/separator chars to strip from field boundaries when
+    // splitting plain-text rows (commas, semicolons, pipes, dashes, tabs,
+    // colons, parens-around-day, etc.).
+    const stripBoundaries = (s) => s.replace(/^[\s,;:|\-—–\t]+|[\s,;:|\-—–\t]+$/g, '');
+
     for (let i = 0; i < lines.length; i++) {
       const rawLine = lines[i].trim();
       if (!rawLine) continue;
       // Skip markdown separator rows: `|---|---|` or `------`
       if (/^[\s\-:|]+$/.test(rawLine)) continue;
+
+      // "Sunday:" / "Sun —" / etc. — sets day context for subsequent rows
+      const dayHeader = rawLine.match(justDayHeaderRegex);
+      if (dayHeader) {
+        currentDayContext = dayMap[dayHeader[1].toLowerCase()] || currentDayContext;
+        continue;
+      }
 
       let day = '';
       let artist = '';
@@ -118,25 +136,38 @@ function App() {
         if (!timeMatch) continue; // not a data row (header/blurb/etc.)
 
         const beforeTime = rawLine.substring(0, timeMatch.index).trim();
-        const afterTime = rawLine
-          .substring(timeMatch.index + timeMatch[0].length)
-          .replace(/^[|\s,\t-]+|[|\s,\t-]+$/g, '')
-          .trim();
+        const afterTime = stripBoundaries(
+          rawLine.substring(timeMatch.index + timeMatch[0].length),
+        );
         timeStr = timeMatch[0];
 
+        // Look for a day prefix in the first 1–2 tokens (handles bullets
+        // like "1. Sun …" or "- Sun …" where the day isn't strictly first).
         const tokens = beforeTime.split(/\s+/).filter(Boolean);
-        if (tokens.length > 0) {
-          const firstClean = tokens[0].toLowerCase().replace(/[^a-z]/g, '');
-          if (dayMap[firstClean] && tokens.length > 1) {
-            day = dayMap[firstClean];
-            artist = tokens.slice(1).join(' ').trim();
-          } else {
-            artist = beforeTime;
+        let dayIdx = -1;
+        for (let k = 0; k < Math.min(2, tokens.length); k++) {
+          const clean = tokens[k].toLowerCase().replace(/[^a-z]/g, '');
+          if (dayMap[clean]) {
+            dayIdx = k;
+            break;
           }
         }
-        artist = stripMdLinks(artist).trim();
-        stage = afterTime;
+        if (dayIdx >= 0) {
+          day = dayMap[tokens[dayIdx].toLowerCase().replace(/[^a-z]/g, '')];
+          artist = tokens
+            .filter((_, k) => k !== dayIdx)
+            .join(' ')
+            .trim();
+        } else {
+          artist = beforeTime;
+        }
+
+        artist = stripBoundaries(stripMdLinks(artist));
+        stage = stripBoundaries(afterTime);
       }
+
+      // Fall back to the inherited day context if the row didn't have its own
+      if (!day && currentDayContext) day = currentDayContext;
 
       const time = convertToTimeFormat(timeStr);
       if (time && artist && stage) {
