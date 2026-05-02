@@ -1132,6 +1132,179 @@ function App() {
   };
   
   /**
+   * Export a single schedule as a shareable PNG.
+   *
+   * Builds the export DOM from scratch (rather than cloning + mutating the
+   * live card) so we can guarantee:
+   *   – no Edit / Remove buttons in the output
+   *   – every set is included even if the live card is collapsed
+   *     ("Show N more sets")
+   *   – consistent share-friendly width regardless of viewport
+   *   – an EDC 2026 header at the top so receivers know what they're
+   *     looking at out of context
+   *
+   * Same mobile-vs-desktop handling as saveMeetupPlanAsImage: native
+   * Photos write on Capacitor, press-and-hold preview overlay on
+   * mobile web, silent download on desktop.
+   */
+  const exportScheduleAsImage = (scheduleIdx) => {
+    const schedule = schedules[scheduleIdx];
+    if (!schedule) return;
+
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/.test(userAgent);
+
+    const escapeHtml = (s) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    // Build a self-contained offscreen container styled inline (so the
+    // export looks the same regardless of which CSS classes are loaded).
+    const offscreenContainer = document.createElement('div');
+    offscreenContainer.style.position = 'absolute';
+    offscreenContainer.style.left = '-9999px';
+    offscreenContainer.style.top = '0';
+    offscreenContainer.style.width = '600px';
+    offscreenContainer.style.padding = '24px 20px 20px';
+    offscreenContainer.style.backgroundColor = '#121212';
+    offscreenContainer.style.color = '#ffffff';
+    offscreenContainer.style.fontFamily = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+    offscreenContainer.style.borderRadius = '12px';
+    offscreenContainer.style.boxSizing = 'border-box';
+
+    const setsHtml = schedule.sets
+      .slice()
+      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .map((set) => {
+        const night = getFestivalNight(set.start) || '';
+        const startTime = formatTime(set.start);
+        const endTime = set.end ? formatTime(set.end) : null;
+        return `
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;">
+            <div style="width:64px;text-align:center;flex-shrink:0;">
+              <div style="font-size:10px;letter-spacing:0.2em;color:rgba(45,212,255,0.85);font-family:'Orbitron',sans-serif;">${escapeHtml(night)}</div>
+              <div style="font-size:14px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;margin-top:2px;">${escapeHtml(startTime)}</div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="color:#ff36de;font-weight:600;font-size:14px;line-height:1.3;">${escapeHtml(set.artist)}</div>
+              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.3;margin-top:2px;">${escapeHtml(set.stage)}${endTime ? ` <span style="color:rgba(255,255,255,0.4)">· ends ${escapeHtml(endTime)}</span>` : ''}</div>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+
+    offscreenContainer.innerHTML = `
+      <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid rgba(255,54,222,0.2);">
+        <div style="font-size:10px;letter-spacing:0.3em;color:#2dd4ff;font-family:'Orbitron',sans-serif;text-transform:uppercase;">EDC LAS VEGAS 2026 · MAY 15–17</div>
+        <div style="font-size:24px;font-weight:bold;color:#ff36de;margin-top:6px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">${escapeHtml(schedule.name)}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;">${schedule.sets.length} ${schedule.sets.length === 1 ? 'set' : 'sets'}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${setsHtml || '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px 0;font-size:13px;">No sets in this schedule yet.</div>'}
+      </div>
+      <div style="text-align:center;margin-top:18px;padding-top:12px;border-top:1px solid rgba(255,0,255,0.12);font-size:10px;color:rgba(255,255,255,0.4);letter-spacing:0.05em;">
+        meetuptimes.com
+      </div>
+    `;
+
+    document.body.appendChild(offscreenContainer);
+
+    // Force layout so dimensions are accurate
+    // eslint-disable-next-line no-unused-expressions
+    offscreenContainer.offsetHeight;
+
+    const filename = `${schedule.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '') || 'schedule'}-EDC-2026.png`;
+
+    const options = {
+      backgroundColor: '#121212',
+      scale: window.innerWidth < 768 ? 2 : 3,
+      logging: false,
+      allowTaint: true,
+      useCORS: true,
+      scrollX: 0,
+      scrollY: 0,
+      width: offscreenContainer.offsetWidth,
+      height: offscreenContainer.offsetHeight,
+      windowWidth: offscreenContainer.offsetWidth,
+      windowHeight: offscreenContainer.offsetHeight,
+    };
+
+    html2canvas(offscreenContainer, options)
+      .then((canvas) => {
+        const dataUrl = canvas.toDataURL('image/png');
+        document.body.removeChild(offscreenContainer);
+
+        canvas.toBlob(async (blob) => {
+          if (Capacitor.isNativePlatform()) {
+            const reader = new FileReader();
+            reader.onload = async () => {
+              const base64 = reader.result.split(',')[1];
+              try {
+                await Filesystem.writeFile({
+                  path: filename,
+                  data: base64,
+                  directory: Directory.Photos,
+                });
+                alert('Saved to Photos');
+              } catch (err) {
+                console.error('Filesystem error:', err);
+                alert('Failed to save to Photos');
+              }
+            };
+            reader.readAsDataURL(blob);
+            return;
+          }
+
+          if (isMobile) {
+            // Same press-and-hold preview overlay as the meetup plan flow
+            const overlay = document.createElement('div');
+            overlay.style.cssText =
+              'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+            const preview = document.createElement('img');
+            preview.src = dataUrl;
+            preview.style.cssText =
+              'width:auto;max-width:88%;max-height:62vh;object-fit:contain;border-radius:8px;box-shadow:0 0 12px rgba(255,0,255,0.25);';
+            const hint = document.createElement('div');
+            hint.style.cssText =
+              'margin-top:16px;padding:10px 16px;border-radius:999px;background:rgba(255,0,255,0.12);border:1px solid rgba(255,0,255,0.4);color:rgba(255,255,255,0.95);font-size:13px;font-weight:600;text-align:center;max-width:88%;';
+            hint.innerHTML = '👆 Press and hold the image to save';
+            const subHint = document.createElement('div');
+            subHint.style.cssText =
+              'margin-top:8px;color:rgba(255,255,255,0.5);font-size:11px;text-align:center;';
+            subHint.innerHTML = 'Tap × in the corner when done';
+            const closeBtn = document.createElement('button');
+            closeBtn.innerHTML = '×';
+            closeBtn.style.cssText =
+              'position:absolute;top:10px;right:10px;background:transparent;border:none;color:rgba(255,255,255,0.7);font-size:28px;cursor:pointer;width:40px;height:40px;display:flex;align-items:center;justify-content:center;padding:0;';
+            closeBtn.addEventListener('click', () => document.body.removeChild(overlay));
+            overlay.appendChild(preview);
+            overlay.appendChild(hint);
+            overlay.appendChild(subHint);
+            overlay.appendChild(closeBtn);
+            document.body.appendChild(overlay);
+          } else {
+            const link = document.createElement('a');
+            link.href = dataUrl;
+            link.download = filename;
+            link.click();
+          }
+        });
+      })
+      .catch((err) => {
+        console.error('Schedule export error:', err);
+        if (document.body.contains(offscreenContainer)) {
+          document.body.removeChild(offscreenContainer);
+        }
+        alert('There was an error exporting the schedule. Please try again.');
+      });
+  };
+
+  /**
    * Reset the entire app to initial state.
    * The actual reset runs after the user confirms in the inline modal —
    * this entry point just opens the modal.
@@ -1770,6 +1943,14 @@ If the image isn't readable, reply exactly:
                         )}
                         <div className="flex items-center gap-3 shrink-0">
                           <span className="text-edc-purple text-sm">{schedule.sets.length} sets</span>
+                          <button
+                            onClick={() => exportScheduleAsImage(idx)}
+                            className="text-edc-pink hover:text-white text-sm transition-colors"
+                            title="Export as shareable image"
+                            disabled={schedule.sets.length === 0}
+                          >
+                            Export
+                          </button>
                           <button
                             onClick={() => handleOpenPickerForExisting(idx)}
                             className="text-edc-blue hover:text-white text-sm transition-colors"
