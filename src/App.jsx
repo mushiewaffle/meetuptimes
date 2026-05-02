@@ -301,7 +301,7 @@ function App() {
       // first schedule = "Your picks", subsequent = "Friend 1", "Friend 2"…
       const scheduleName =
         trimmedName ||
-        (schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`);
+        (schedules.length === 0 ? 'Your Schedule' : `Friend ${schedules.length}`);
       // Append new schedules at the END so the spatial direction matches the
       // newly-bottom-positioned "Add" button (most recent shows up just above
       // the button you tapped to add it).
@@ -2322,9 +2322,14 @@ If the image isn't readable, reply exactly:
                         </span>
                       </div>
 
-                      {/* Artist + stage stacked, no decorative prose */}
-                      <div className="text-edc-pink font-semibold text-base leading-snug">
-                        {meetup.beforeCommonArtist || 'Next artist'}
+                      {/* Artist (with "Before" prefix for clarity) + stage stacked.
+                          "Before" label tells the user this is the set the meetup
+                          happens just before — without a verbose sentence. */}
+                      <div className="leading-snug">
+                        <span className="text-white/50 text-sm">Before</span>{' '}
+                        <span className="text-edc-pink font-semibold text-base">
+                          {meetup.beforeCommonArtist || 'next artist'}
+                        </span>
                       </div>
                       <div className="text-edc-blue/80 text-sm leading-snug mt-0.5 mb-3">
                         @ {meetup.beforeStage || 'Unknown stage'}
@@ -2579,7 +2584,7 @@ If the image isn't readable, reply exactly:
           pickerTargetIdx !== null
             ? schedules[pickerTargetIdx]?.name ?? ''
             : schedules.length === 0
-              ? 'Your picks'
+              ? 'Your Schedule'
               : ''
         }
         namePlaceholder={
