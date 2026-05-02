@@ -907,131 +907,75 @@ function App() {
     let saveButton;
     let originalText;
     try {
-      // Create a new offscreen element (this won't be visible to the user)
+      // Clone the plan and apply the screenshot-mode class. The legacy
+      // per-element style mutations (matching `.location-container`,
+      // `[class*="border-l-2"]`, etc.) targeted the old card structure and
+      // were both dead code AND, where they did match, would zero out the
+      // padding that prevents the bottom row from being clipped.
       const offscreenElement = meetupPlanRef.current.cloneNode(true);
-      
-      // Create a completely new location display that won't have alignment issues
-      const locationContainers = offscreenElement.querySelectorAll('.location-container');
-      locationContainers.forEach(container => {
-        if (container) {
-          // Get existing content
-          const locationTextElement = container.querySelector('.location-text');
-          const locationText = locationTextElement ? locationTextElement.textContent : '';
-          
-          // Clear existing content
-          container.innerHTML = '';
-          
-          // Remove all spacing from container
-          container.style.padding = '0';
-          container.style.margin = '0';
-          container.style.marginTop = '-3px'; // Close the gap with content above
-          container.style.overflow = 'visible'; // Ensure icon isn't clipped
-          
-          // Create a simple text node with the location icon as a unicode character
-          const newContent = document.createElement('div');
-          newContent.style.display = 'flex';
-          newContent.style.alignItems = 'center';
-          newContent.style.marginTop = '0';
-          
-          // Make the emoji and text the exact same as the website view
-          const iconSpan = document.createElement('span');
-          iconSpan.style.color = '#5d9de8';
-          iconSpan.style.marginRight = '8px';
-          iconSpan.style.fontSize = '15px';
-          iconSpan.style.lineHeight = '1';
-          iconSpan.style.position = 'relative';
-          iconSpan.style.top = '1px';
-          iconSpan.textContent = '📍';
-          
-          const textSpan = document.createElement('span');
-          textSpan.style.verticalAlign = 'middle';
-          textSpan.style.lineHeight = '1';
-          textSpan.textContent = locationText;
-          
-          newContent.appendChild(iconSpan);
-          newContent.appendChild(textSpan);
-          container.appendChild(newContent);
-        }
-      });
-      
-      // Apply screenshot styling to the clone (not the visible element)
       offscreenElement.classList.add('screenshot-mode');
-      
-      // Fix padding for all meetup containers in the saved image
-      const meetupContainers = offscreenElement.querySelectorAll('[class*="border-l-2"]');
-      meetupContainers.forEach(container => {
-        if (container) {
-          // Remove all padding
-          container.style.padding = '0';
-          container.style.paddingBottom = '0';
-          
-          // Create a precise layout for the saved image
-          container.style.display = 'flex';
-          container.style.flexDirection = 'column';
-          container.style.gap = '0';
-          container.style.paddingTop = '0';
-          container.style.paddingBottom = '4px';
-          
-          // Title heading - clean and tight
-          const heading = container.querySelector('h3');
-          if (heading) {
-            heading.style.margin = '0';
-            heading.style.padding = '0';
-            heading.style.lineHeight = '1.2';
+
+      // Two fixes for the user-reported "Siiso" cut-off bug:
+      // 1. Bump padding-bottom on every card so html2canvas's height
+      //    measurement always has slack for descenders + the location row.
+      // 2. Strip `overflow: hidden` from any element inside the card (the
+      //    `truncate` utility sets it; combined with html2canvas's height
+      //    rounding, the bottom of the location text was being clipped).
+      offscreenElement.querySelectorAll('.meetup-card').forEach((card) => {
+        card.style.paddingBottom = '20px';
+        card.querySelectorAll('*').forEach((node) => {
+          if (node instanceof HTMLElement) {
+            const cs = window.getComputedStyle(node);
+            if (cs.overflow === 'hidden' || cs.overflowX === 'hidden' || cs.overflowY === 'hidden') {
+              node.style.overflow = 'visible';
+            }
+            if (cs.textOverflow === 'ellipsis') {
+              node.style.textOverflow = 'clip';
+              node.style.whiteSpace = 'normal';
+            }
           }
-          
-          // Time info - consistent spacing with gap after
-          const timeInfo = container.querySelector('p');
-          if (timeInfo) {
-            timeInfo.style.margin = '0';
-            timeInfo.style.padding = '0';
-            timeInfo.style.lineHeight = '1.2';
-            timeInfo.style.marginBottom = '3px';
-          }
-          
-          // Schedule text - aligned properly with no gap after
-          const scheduleText = container.querySelector('.text-edc-purple');
-          if (scheduleText) {
-            scheduleText.style.margin = '0';
-            scheduleText.style.padding = '0';
-            scheduleText.style.lineHeight = '1.2';
-            scheduleText.style.marginBottom = '-2px';
-          }
-          
-          // Location container - proper alignment and spacing
-          const locationContainer = container.querySelector('.location-container');
-          if (locationContainer) {
-            locationContainer.style.margin = '0';
-            locationContainer.style.marginTop = '-1px';
-            locationContainer.style.padding = '0';
-            locationContainer.style.lineHeight = '1.2';
-          }
-        }
+        });
       });
-      
-      // Position the element offscreen but still render it
+
+      // Position the clone offscreen at a fixed share-friendly width.
       offscreenContainer = document.createElement('div');
       offscreenContainer.style.position = 'absolute';
       offscreenContainer.style.left = '-9999px';
       offscreenContainer.style.top = '0';
-      offscreenContainer.style.width = `${meetupPlanRef.current.offsetWidth}px`;
+      offscreenContainer.style.width = '600px';
+      offscreenContainer.style.padding = '4px';
       offscreenContainer.appendChild(offscreenElement);
       document.body.appendChild(offscreenContainer);
-      
-      // Configure the html2canvas options
-      // Make the offscreen container more narrow for a better fit in the image
-      offscreenContainer.style.maxWidth = '600px';
-      
+
+      // Force a synchronous layout pass so scrollHeight is accurate before
+      // we measure (otherwise the offscreen element can report a height
+      // that doesn't yet include all wrapped content).
+      // eslint-disable-next-line no-unused-expressions
+      offscreenElement.offsetHeight;
+      const fullHeight = Math.max(
+        offscreenElement.scrollHeight,
+        offscreenElement.offsetHeight,
+      );
+      const fullWidth = Math.max(
+        offscreenElement.scrollWidth,
+        offscreenElement.offsetWidth,
+      );
+
+      // html2canvas options. Pass explicit width/height to avoid the
+      // viewport-clip behavior that was cutting off the last card's
+      // meetup-spot row in tall plans.
       const options = {
         backgroundColor: '#121212',
-        scale: window.innerWidth < 768 ? 2 : 3, // Higher scale on larger screens
+        scale: window.innerWidth < 768 ? 2 : 3,
         logging: false,
         allowTaint: true,
         useCORS: true,
         scrollX: 0,
-        scrollY: 0, // No need to adjust scroll for offscreen element
-        windowWidth: Math.min(600, window.innerWidth), // Reduce max width to make screenshot less wide
-        windowHeight: window.innerHeight,
+        scrollY: 0,
+        width: fullWidth,
+        height: fullHeight,
+        windowWidth: fullWidth,
+        windowHeight: fullHeight,
       };
       
       // Show a loading indicator while capturing
@@ -2387,9 +2331,14 @@ If the image isn't readable, reply exactly:
                             </button>
                           </div>
                         ) : meetup.customLocation ? (
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-edc-pink/80 shrink-0">📍</span>
-                            <span className="flex-1 text-white/90 truncate min-w-0">{meetup.customLocation}</span>
+                          // Note: NO `truncate` on the location text — its
+                          // overflow:hidden combined with html2canvas's height
+                          // measurement was clipping descenders in the saved
+                          // image. Long locations now wrap to a second line
+                          // (still readable, still captured fully).
+                          <div className="flex items-start gap-2 text-sm pb-1">
+                            <span className="text-edc-pink/80 shrink-0 leading-tight">📍</span>
+                            <span className="flex-1 text-white/90 leading-tight break-words min-w-0">{meetup.customLocation}</span>
                             <button
                               onClick={() => startEditingLocation(idx)}
                               className="text-edc-blue/50 hover:text-edc-blue/80 shrink-0 transition-colors hide-in-screenshot p-0.5"
