@@ -182,21 +182,37 @@ export default function EDCPicker({
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex items-stretch sm:items-center justify-center sm:p-4 animate-fadeIn">
       <div className="w-full sm:max-w-2xl bg-edc-black border-0 sm:border sm:border-edc-purple/40 sm:rounded-2xl shadow-2xl flex flex-col max-h-screen sm:max-h-[90vh]">
-        {/* Header — collapsed to: editable schedule name + close button.
-            The old EDC subtitle and instructions were redundant with the main
-            page hero and self-explanatory tab UI. */}
+        {/* Header — editable schedule name + close button. A small label and
+            pencil icon make the name input obviously tap-to-edit (otherwise
+            users miss it; bare bottom-border didn't read as an input). */}
         <div className="px-4 pt-4 pb-3 border-b border-edc-purple/20">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={namePlaceholder}
-              className="flex-1 min-w-0 bg-transparent text-lg font-bold text-white placeholder-white/30 border-b border-edc-purple/30 focus:border-edc-pink focus:outline-none py-1 px-0"
-            />
+          <div className="flex items-end gap-2">
+            <div className="flex-1 min-w-0">
+              <label className="block text-[10px] font-orbitron tracking-widest uppercase text-edc-blue/80 mb-1">
+                Schedule name · tap to edit
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={namePlaceholder}
+                  className="w-full bg-transparent text-lg font-bold text-white placeholder-white/30 border-b-2 border-edc-purple/40 hover:border-edc-purple/70 focus:border-edc-pink focus:outline-none py-1 pr-7 pl-0 transition-colors"
+                />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-edc-purple/60 pointer-events-none"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+              </div>
+            </div>
             <button
               onClick={onCancel}
-              className="shrink-0 text-white/40 hover:text-edc-pink text-2xl leading-none w-8 h-8 flex items-center justify-center"
+              className="shrink-0 text-white/40 hover:text-edc-pink text-2xl leading-none w-8 h-8 flex items-center justify-center -mb-1"
               aria-label="Close"
             >
               ×

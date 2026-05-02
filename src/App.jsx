@@ -261,6 +261,9 @@ function App() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerTargetIdx, setPickerTargetIdx] = useState(null);
 
+  // "How does this work?" help modal — accessible from the top-right ? button.
+  const [showHelp, setShowHelp] = useState(false);
+
   const handleOpenPickerForNew = () => {
     setPickerTargetIdx(null);
     setPickerOpen(true);
@@ -1398,7 +1401,17 @@ function App() {
   
   return (
     <div className="min-h-screen w-full bg-edc-black bg-festival-pattern bg-cover bg-center py-4 px-2 overflow-x-hidden">
-      <div className="max-w-5xl mx-auto w-full">
+      <div className="max-w-5xl mx-auto w-full relative">
+        {/* "?" help button — subtle top-right corner. Quick refresher for users
+            who land mid-flow or get confused about what the app does. */}
+        <button
+          onClick={() => setShowHelp(true)}
+          className="absolute top-0 right-2 w-8 h-8 rounded-full border border-edc-purple/40 hover:border-edc-blue text-edc-blue/70 hover:text-edc-blue text-sm font-bold flex items-center justify-center transition-colors z-10"
+          aria-label="How does this work?"
+          title="How does this work?"
+        >
+          ?
+        </button>
         <header className="text-center mb-8">
           <div className="font-orbitron tracking-[0.3em] text-[10px] sm:text-xs text-edc-blue mb-2">
             EDC LAS VEGAS 2026 · MAY 15–17
@@ -2406,6 +2419,85 @@ If the image isn't readable, reply exactly:
           </div>
         </div>
       </div>
+
+      {/* "How does this work?" modal — concise 3-step walkthrough plus
+          a small FAQ-style line about the meetup output. Dismissed via X
+          or backdrop click. */}
+      {showHelp && (
+        <div
+          onClick={() => setShowHelp(false)}
+          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md bg-edc-black border border-edc-purple/40 rounded-2xl p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <div className="font-orbitron tracking-widest text-[10px] text-edc-blue mb-0.5">
+                  HOW IT WORKS
+                </div>
+                <h2 className="text-xl font-bold text-white">
+                  Find when you can meet up
+                </h2>
+              </div>
+              <button
+                onClick={() => setShowHelp(false)}
+                className="text-white/40 hover:text-edc-pink text-2xl leading-none -mt-1"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <ol className="space-y-4 text-sm text-white/85 mb-5">
+              <li className="flex gap-3">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-blue/20 border border-edc-blue/60 text-edc-blue font-bold text-sm flex items-center justify-center">
+                  1
+                </div>
+                <div>
+                  <div className="text-white font-semibold mb-0.5">Pick your sets</div>
+                  <div className="text-white/60 text-xs leading-relaxed">
+                    Tap which EDC 2026 artists you want to see. Switch between Fri / Sat / Sun nights with the tabs.
+                  </div>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-pink/20 border border-edc-pink/60 text-edc-pink font-bold text-sm flex items-center justify-center">
+                  2
+                </div>
+                <div>
+                  <div className="text-white font-semibold mb-0.5">Add your friend's sets</div>
+                  <div className="text-white/60 text-xs leading-relaxed">
+                    Same picker — tap their picks, name the schedule (e.g. "Alice"). You can add up to as many friends as you want.
+                  </div>
+                </div>
+              </li>
+              <li className="flex gap-3">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-edc-purple/20 border border-edc-purple/60 text-edc-purple font-bold text-sm flex items-center justify-center">
+                  3
+                </div>
+                <div>
+                  <div className="text-white font-semibold mb-0.5">Find Meetup Times</div>
+                  <div className="text-white/60 text-xs leading-relaxed">
+                    Tap the button — we'll find the time slots before sets you BOTH picked. Pick which ones to lock in for your meetup plan.
+                  </div>
+                </div>
+              </li>
+            </ol>
+            <div className="text-[11px] text-white/40 leading-relaxed border-t border-edc-purple/20 pt-3">
+              All your data stays on this device — nothing is uploaded.
+              Have an Insomniac screenshot already? Use the "From Insomniac
+              Screenshot" option to skip the tap-from-list step.
+            </div>
+            <button
+              onClick={() => setShowHelp(false)}
+              className="mt-4 w-full py-2.5 rounded-md bg-gradient-to-r from-edc-blue to-edc-pink text-white font-bold text-sm font-orbitron tracking-wider"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* EDC roster picker — modal for tap-from-list set selection. The
           schedule's name is now an editable field at the top of the picker
