@@ -1459,7 +1459,7 @@ function App() {
                         ? 'Add Your Schedule'
                         : schedules.length === 1
                           ? "Add Friend's Schedule →"
-                          : 'Add Another Schedule'}
+                          : "Add Another Friend's Schedule"}
                     </button>
                   </div>
                 ) : (
