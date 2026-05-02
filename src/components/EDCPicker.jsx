@@ -73,20 +73,23 @@ const SetRow = memo(function SetRow({ set, picked, onToggle }) {
  * Props:
  *   open: boolean
  *   initialSelection: number[] (set IDs already picked, optional)
- *   title: string (header text — e.g. "Pick your sets" or "Edit schedule")
- *   onSave: (sets: ScheduleSet[]) => void   // sets in {artist, stage, start} shape
+ *   initialName: string (current schedule name, e.g. "Your picks" or "Alice")
+ *   namePlaceholder: string (placeholder shown when input is empty)
+ *   onSave: (sets: ScheduleSet[], name: string) => void
  *   onCancel: () => void
  */
 export default function EDCPicker({
   open,
   initialSelection = [],
-  title = 'Pick your sets',
+  initialName = '',
+  namePlaceholder = 'Schedule name…',
   onSave,
   onCancel,
 }) {
   const [activeNight, setActiveNight] = useState('Fri');
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState(() => new Set(initialSelection));
+  const [name, setName] = useState(initialName);
   const listRef = useRef(null);
 
   // useDeferredValue keeps typing snappy: input updates immediately, but
@@ -99,6 +102,7 @@ export default function EDCPicker({
       setPicked(new Set(initialSelection));
       setQuery('');
       setActiveNight('Fri');
+      setName(initialName);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -160,8 +164,8 @@ export default function EDCPicker({
         end: s.end,
       }))
       .sort((a, b) => new Date(a.start) - new Date(b.start));
-    onSave(pickedSets);
-  }, [picked, onSave]);
+    onSave(pickedSets, name.trim());
+  }, [picked, name, onSave]);
 
   // Recomputed only when the picked set actually changes, not on every render.
   const totalsByNight = useMemo(() => {
@@ -178,21 +182,21 @@ export default function EDCPicker({
   return (
     <div className="fixed inset-0 z-50 bg-black/90 flex items-stretch sm:items-center justify-center sm:p-4 animate-fadeIn">
       <div className="w-full sm:max-w-2xl bg-edc-black border-0 sm:border sm:border-edc-purple/40 sm:rounded-2xl shadow-2xl flex flex-col max-h-screen sm:max-h-[90vh]">
-        {/* Header */}
+        {/* Header — collapsed to: editable schedule name + close button.
+            The old EDC subtitle and instructions were redundant with the main
+            page hero and self-explanatory tab UI. */}
         <div className="px-4 pt-4 pb-3 border-b border-edc-purple/20">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="font-orbitron tracking-widest text-[10px] text-edc-blue mb-0.5">
-                EDC LAS VEGAS 2026 · MAY 15–17
-              </div>
-              <h2 className="text-xl font-bold text-white">{title}</h2>
-              <p className="text-xs text-white/50 mt-0.5">
-                Tap to add sets. Switch nights with the tabs below.
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={namePlaceholder}
+              className="flex-1 min-w-0 bg-transparent text-lg font-bold text-white placeholder-white/30 border-b border-edc-purple/30 focus:border-edc-pink focus:outline-none py-1 px-0"
+            />
             <button
               onClick={onCancel}
-              className="text-white/40 hover:text-edc-pink text-2xl leading-none -mt-1"
+              className="shrink-0 text-white/40 hover:text-edc-pink text-2xl leading-none w-8 h-8 flex items-center justify-center"
               aria-label="Close"
             >
               ×

@@ -286,24 +286,26 @@ function App() {
     return ids;
   };
 
-  const handleEDCPickerSave = (sets) => {
+  const handleEDCPickerSave = (sets, name) => {
     setPickerOpen(false);
+    const trimmedName = (name || '').trim();
     if (pickerTargetIdx === null) {
-      // Smarter default name: first schedule = "Your picks", subsequent =
-      // "Friend 1", "Friend 2", … (matches the typical mental model of "you +
-      // friends" without forcing a naming step on the first add).
+      // Default fallback when the user leaves the name input blank:
+      // first schedule = "Your picks", subsequent = "Friend 1", "Friend 2"…
       const scheduleName =
-        schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`;
+        trimmedName ||
+        (schedules.length === 0 ? 'Your picks' : `Friend ${schedules.length}`);
       setSchedules([{ name: scheduleName, sets }, ...schedules]);
     } else {
-      // Edit mode: the picker was pre-filled with the schedule's existing sets,
-      // so whatever is selected on save IS the schedule's new state. Replace,
-      // don't merge — otherwise unchecking would silently fail to remove sets.
+      // Edit mode: the picker was pre-filled with the schedule's existing
+      // sets AND name, so on save we replace both — unchecking removes sets,
+      // editing the name in the input renames the schedule.
       const updated = [...schedules];
       const target = updated[pickerTargetIdx];
       if (target) {
         const sortedSets = [...sets].sort((a, b) => new Date(a.start) - new Date(b.start));
         target.sets = sortedSets;
+        if (trimmedName) target.name = trimmedName;
         setSchedules(updated);
       }
     }
@@ -2414,25 +2416,31 @@ If the image isn't readable, reply exactly:
         </div>
       </div>
 
-      {/* EDC roster picker — modal for tap-from-list set selection. When
-          editing an existing schedule, pre-checks its current sets so the user
-          can deselect to remove or tap others to add. The title flips to
-          "Pick your friend's sets" on schedule #2 so a brand-new user (who
-          just saved their own picks) immediately understands this round is
-          for their friend, not a re-do. */}
+      {/* EDC roster picker — modal for tap-from-list set selection. The
+          schedule's name is now an editable field at the top of the picker
+          (replacing the old static title), so creating and naming happen in
+          a single integrated flow.
+          – New 1st schedule:   default name "Your picks" (editable)
+          – New 2nd+ schedule:  empty + placeholder "Friend's name…"
+          – Editing existing:   pre-filled with current schedule.name */}
       <EDCPicker
         open={pickerOpen}
-        title={
-          pickerTargetIdx !== null
-            ? `Edit ${schedules[pickerTargetIdx]?.name ?? 'schedule'}`
-            : schedules.length === 0
-              ? 'Pick your sets'
-              : "Pick your friend's sets"
-        }
         initialSelection={
           pickerTargetIdx !== null
             ? getInitialSelectionFromSchedule(schedules[pickerTargetIdx])
             : []
+        }
+        initialName={
+          pickerTargetIdx !== null
+            ? schedules[pickerTargetIdx]?.name ?? ''
+            : schedules.length === 0
+              ? 'Your picks'
+              : ''
+        }
+        namePlaceholder={
+          pickerTargetIdx === null && schedules.length > 0
+            ? "Friend's name…"
+            : 'Schedule name…'
         }
         onSave={handleEDCPickerSave}
         onCancel={() => setPickerOpen(false)}
