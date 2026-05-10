@@ -1072,73 +1072,117 @@ function App() {
             }
           }
         });
+        // Number badge — line-height-based vertical centering instead of
+        // flex; html2canvas was rendering the digit slightly above center
+        // with the previous flex setup. box-sizing: border-box keeps the
+        // 28px outer footprint stable as the border thickens it.
         const badge = document.createElement('div');
         badge.textContent = String(cardIdx + 1);
         badge.style.cssText =
-          'position:absolute;left:-8px;top:-10px;width:28px;height:28px;' +
+          'position:absolute;left:-10px;top:-10px;' +
+          'box-sizing:border-box;width:28px;height:28px;' +
           'background:#39ff14;color:#000;border:2px solid #000;' +
           'box-shadow:0 0 0 2px #fff;border-radius:50%;' +
-          'display:flex;align-items:center;justify-content:center;' +
-          'font-weight:900;font-size:13px;font-family:Inter,sans-serif;' +
-          'line-height:1;z-index:5;';
+          'text-align:center;line-height:24px;padding:0;' +
+          'font-weight:900;font-size:14px;' +
+          "font-family:'Helvetica Neue',Inter,Arial,sans-serif;" +
+          'z-index:5;';
         card.insertBefore(badge, card.firstChild);
       });
 
-      // Inject the festival map at the top of the export with a numbered
-      // pin per meetup. Pairs with the corner badge on each card so a
-      // shared screenshot is self-contained — recipients can see at a
-      // glance where each meetup lands on the festival grounds without
-      // needing the app open. Stages without map coords (YeeDC!) get a
-      // numbered card but no pin; that's acceptable since the omission is
-      // intentional and the card still shows the landmark text.
+      // Build the cropped festival map column with numbered green pins.
+      //
+      // Layout target (per user feedback): cards stack on the LEFT going
+      // downwards, the map sits on the RIGHT cropped down to just the
+      // festival oval (legend / EDC logo / dates removed). Each pin uses
+      // line-height-based centering so the digit lands dead center; flex
+      // centering rendered slightly off in html2canvas.
+      //
+      // Cropping math: the festival oval in the source 1073×1341 image
+      // sits roughly at x=20→580 (560 px wide) and y=70→1290 (1220 px
+      // tall). We render the full image inside an inner div sized so the
+      // oval fills MAP_W, then translate it inside an overflow:hidden
+      // outer div clipped to (MAP_W × ovalH * scale) to show only the
+      // oval. Pins use the same percentages as the live FestivalMap modal
+      // because they're anchored to the (full) inner image div.
+      const MAP_W = 320;
+      const OVAL_NATIVE_W = 560;
+      const OVAL_NATIVE_H = 1220;
+      const OVAL_OFFSET_X = 20;
+      const OVAL_OFFSET_Y = 70;
+      const mapScale = MAP_W / OVAL_NATIVE_W;
+      const innerImgW = Math.round(1073 * mapScale);
+      const innerImgH = Math.round(1341 * mapScale);
+      const cropH = Math.round(OVAL_NATIVE_H * mapScale);
+      const cropOffX = -Math.round(OVAL_OFFSET_X * mapScale);
+      const cropOffY = -Math.round(OVAL_OFFSET_Y * mapScale);
+
       const pinsHtml = meetupPlan
         .map((meetup, idx) => {
           const c = getStageMapCoords(meetup.beforeStage);
           if (!c) return '';
           return (
             `<div style="position:absolute;left:${c.x}%;top:${c.y}%;` +
-            `transform:translate(-50%,-50%);width:30px;height:30px;` +
+            `transform:translate(-50%,-50%);box-sizing:border-box;` +
+            `width:28px;height:28px;` +
             `background:#39ff14;color:#000;border:3px solid #000;` +
             `box-shadow:0 0 0 2px #fff,0 0 12px 2px rgba(57,255,20,0.6);` +
-            `border-radius:50%;display:flex;align-items:center;` +
-            `justify-content:center;font-weight:900;font-size:15px;` +
-            `font-family:Inter,sans-serif;line-height:1;">${idx + 1}</div>`
+            `border-radius:50%;text-align:center;line-height:22px;` +
+            `font-weight:900;font-size:14px;` +
+            `font-family:'Helvetica Neue',Inter,Arial,sans-serif;">${idx + 1}</div>`
           );
         })
         .join('');
-      const mapWrapper = document.createElement('div');
-      mapWrapper.style.cssText =
-        'margin:12px 0 16px;border-radius:12px;overflow:hidden;' +
-        'border:1px solid rgba(155,108,255,0.3);background:rgba(0,0,0,0.3);';
-      mapWrapper.innerHTML =
+
+      const mapColumn = document.createElement('div');
+      mapColumn.style.cssText =
+        `width:${MAP_W}px;flex-shrink:0;border-radius:12px;` +
+        'overflow:hidden;border:1px solid rgba(155,108,255,0.3);' +
+        'background:rgba(0,0,0,0.3);';
+      mapColumn.innerHTML =
         '<div style="background:rgba(0,0,0,0.4);padding:8px 12px;' +
         "font-family:'Orbitron',sans-serif;font-size:10px;" +
         'letter-spacing:0.25em;color:#2dd4ff;text-transform:uppercase;' +
-        'text-align:center;">Festival Map · Meetup Locations</div>' +
-        '<div style="position:relative;">' +
-        // crossOrigin omitted on purpose — the asset is served same-origin
-        // from /public, and adding crossorigin can flip the browser into a
-        // CORS preflight that the dev server doesn't always answer cleanly.
+        'text-align:center;">Meetup locations</div>' +
+        `<div style="position:relative;width:${MAP_W}px;height:${cropH}px;overflow:hidden;">` +
+        `<div style="position:absolute;width:${innerImgW}px;height:${innerImgH}px;` +
+        `left:${cropOffX}px;top:${cropOffY}px;">` +
         '<img src="/edc-map-2026.jpg" alt="EDC 2026 festival map" ' +
         'style="width:100%;display:block;" />' +
         pinsHtml +
-        '</div>';
+        '</div></div>';
+
+      // Reorganise the cloned plan so cards stack on the left and the
+      // cropped map sits on the right. We grab the live cards container
+      // and wrap it together with the map in a flex row.
       const cardsContainer = offscreenElement.querySelector('[class*="space-y-4"]');
       if (cardsContainer && cardsContainer.parentNode) {
-        cardsContainer.parentNode.insertBefore(mapWrapper, cardsContainer);
+        const sideRow = document.createElement('div');
+        sideRow.style.cssText =
+          'display:flex;gap:16px;align-items:flex-start;margin-top:8px;';
+        cardsContainer.parentNode.insertBefore(sideRow, cardsContainer);
+        // Cards become the left flex item; force min-width:0 so long
+        // strings can shrink-to-fit instead of pushing the row wider.
+        sideRow.appendChild(cardsContainer);
+        cardsContainer.style.flex = '1 1 0';
+        cardsContainer.style.minWidth = '0';
+        sideRow.appendChild(mapColumn);
       } else {
-        // Fallback — append at the top of the cloned plan if the cards
-        // container can't be located (defensive; current markup always
-        // matches the selector above).
-        offscreenElement.insertBefore(mapWrapper, offscreenElement.firstChild);
+        // Defensive fallback — cards container missing (current markup
+        // always matches the selector above, but don't drop the map on
+        // the floor if that ever changes).
+        offscreenElement.insertBefore(mapColumn, offscreenElement.firstChild);
       }
 
-      // Position the clone offscreen at a fixed share-friendly width.
+      // Position the clone offscreen. Width is bumped from 600 → 940 to
+      // accommodate the side-by-side layout; cards keep ~560 px of width
+      // (matches what users were seeing before) plus the 320 px map and
+      // 16 px gap.
       offscreenContainer = document.createElement('div');
       offscreenContainer.style.position = 'absolute';
       offscreenContainer.style.left = '-9999px';
       offscreenContainer.style.top = '0';
-      offscreenContainer.style.width = '600px';
+      offscreenContainer.style.width = '940px';
       offscreenContainer.style.padding = '4px';
       offscreenContainer.appendChild(offscreenElement);
       document.body.appendChild(offscreenContainer);
