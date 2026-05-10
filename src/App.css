@@ -37,19 +37,21 @@
 /* Screenshot styling */
 .screenshot-mode {
   background-color: #121212 !important;
-  padding: 20px !important;
+  padding: 12px 14px !important;
   border-radius: 12px !important;
   border: 1px solid rgba(138, 43, 226, 0.2) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
 }
 
 .screenshot-mode h2 {
-  margin-bottom: 0.25rem !important;
+  margin-top: 0 !important;
+  margin-bottom: 0.125rem !important;
   color: rgba(255, 105, 180, 0.9) !important;
-  font-size: 1.75rem !important;
+  font-size: 1.5rem !important;
   text-align: center !important;
   font-weight: 600 !important;
   letter-spacing: 0.5px !important;
+  line-height: 1.15 !important;
 }
 
 .screenshot-mode button,
@@ -58,9 +60,20 @@
 }
 
 .screenshot-mode .meetup-card {
-  margin-bottom: 16px !important;
+  margin-bottom: 10px !important;
   background-color: rgba(20, 20, 20, 0.7) !important;
   border-radius: 8px !important;
+}
+
+/* Pull the first card snug to the date line so the export header stops
+   floating above a wide gap. The default Tailwind space-y-4 (16-px
+   margin-top) was the main contributor to the "too large" gap between
+   the meetup-time row and the title block above it. */
+.screenshot-mode .space-y-4 > :first-child {
+  margin-top: 0 !important;
+}
+.screenshot-mode .space-y-4 > * + * {
+  margin-top: 8px !important;
 }
 
 .screenshot-header {

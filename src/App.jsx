@@ -1347,7 +1347,7 @@ function App() {
           ? `${escapeHtml(startTime)} – ${escapeHtml(endTime)}`
           : escapeHtml(startTime);
         return `${header}
-          <div style="display:flex;align-items:center;gap:12px;padding:7px 11px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;font-size:13px;line-height:1.2;">
+          <div style="display:flex;align-items:center;gap:12px;padding:4px 11px 7px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;font-size:13px;line-height:1.1;">
             <span style="flex-shrink:0;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;white-space:nowrap;">${timeRange}</span>
             <span style="flex:1;min-width:0;color:#ff36de;font-weight:600;">${escapeHtml(set.artist)}</span>
             <span style="flex-shrink:0;color:rgba(45,212,255,0.75);font-size:11px;white-space:nowrap;">${escapeHtml(set.stage)}</span>
@@ -2627,9 +2627,11 @@ If the image isn't readable, reply exactly:
         {currentPage === 'meetupPlan' && meetupPlan.length > 0 && (
           <div id="meetup-plan" className="w-full bg-black bg-opacity-70 backdrop-blur-sm p-6 rounded-lg">
             <div ref={meetupPlanRef}>
-              {/* Back button */}
-              <div className="flex justify-between items-center mb-4">
-                <button 
+              {/* Back button — hidden as a whole row in screenshot mode so
+                  its 16-px mb-4 doesn't leave a ghost gap above the title
+                  in the exported PNG. */}
+              <div className="flex justify-between items-center mb-4 hide-in-screenshot">
+                <button
                   onClick={() => navigateBack('meetupGaps')}
                   className="px-4 py-2 bg-black/50 text-white/70 border border-edc-purple/30 rounded-md hover:bg-black/70 hover:text-white/90 hover:border-edc-purple/50 transition-all flex items-center text-sm"
                 >
@@ -2639,9 +2641,9 @@ If the image isn't readable, reply exactly:
                   Back to Meetup Times
                 </button>
               </div>
-            
-              <h2 className="text-xl font-medium text-edc-pink/80 mb-1 text-center">EDC meetup plan</h2>
-              <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+
+              <h2 className="text-xl font-medium text-edc-pink/80 mb-0.5 text-center">EDC meetup plan</h2>
+              <div className="text-white/40 text-xs text-center mb-2">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
             
               <div className="space-y-4 text-left">
                 {(() => {
