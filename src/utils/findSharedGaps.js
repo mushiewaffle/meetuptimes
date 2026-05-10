@@ -287,8 +287,11 @@ const findSharedGaps = (schedules) => {
   // Remove the artificial limit and close the disabled code block
   */
   
-  // Return only the valid meetup times based on common sets
-  return meetupGaps.slice(0, 8);
+  // Return all meetup gaps. The earlier .slice(0, 8) cap was a holdover
+  // from when the disabled "general gap finder" above produced dozens of
+  // spurious gaps; now we only emit one gap per shared set, so a schedule
+  // with 17 overlaps should surface all 17.
+  return meetupGaps;
 };
 
 export default findSharedGaps;
