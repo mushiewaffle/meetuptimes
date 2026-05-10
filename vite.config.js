@@ -13,6 +13,18 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'robots.txt', 'icons/*.png'],
+      // skipWaiting + clientsClaim so a new build activates immediately
+      // instead of waiting for the old service worker to release. The
+      // previous default left users on stale cached bundles for hours
+      // after a deploy — most notably making the map-revert change look
+      // like the live site was still broken because the old JS bundle
+      // (with FestivalMap modal + map-column references to a now-deleted
+      // /edc-map-2026.jpg) kept being served from cache.
+      workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+      },
       manifest: {
         name: 'EDC 2026 · Find sets and meetup times with friends',
         short_name: 'EDC 2026',
