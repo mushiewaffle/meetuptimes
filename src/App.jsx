@@ -1336,15 +1336,23 @@ function App() {
           prevNight = night;
         }
 
+        // Compact row layout. Old version had a fixed 60-px time column on
+        // the left that was too narrow for "11:15 PM" + a stacked
+        // "ends 12:25 AM" — html2canvas wrapped both at the colon and at
+        // the meridiem, blowing each card to 4-5 visual lines while the
+        // right side sat half-empty. Now: time range collapses to one
+        // line with white-space:nowrap so it never breaks, and the right
+        // column carries the artist + stage as before. Cards average ~50
+        // px tall instead of the ~150-200 px the old layout produced.
+        const timeRange = endTime
+          ? `${escapeHtml(startTime)} – ${escapeHtml(endTime)}`
+          : escapeHtml(startTime);
         return `${header}
-          <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;">
-            <div style="width:60px;text-align:center;flex-shrink:0;">
-              <div style="font-size:14px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;line-height:1.2;">${escapeHtml(startTime)}</div>
-              ${endTime ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px;">ends ${escapeHtml(endTime)}</div>` : ''}
-            </div>
+          <div style="display:flex;align-items:flex-start;gap:14px;padding:9px 12px 11px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;">
+            <div style="flex-shrink:0;white-space:nowrap;font-size:13px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;line-height:1.4;padding-top:1px;">${timeRange}</div>
             <div style="flex:1;min-width:0;">
-              <div style="color:#ff36de;font-weight:600;font-size:14px;line-height:1.3;">${escapeHtml(set.artist)}</div>
-              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.3;margin-top:2px;">${escapeHtml(set.stage)}</div>
+              <div style="color:#ff36de;font-weight:600;font-size:14px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(set.artist)}</div>
+              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.4;margin-top:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(set.stage)}</div>
             </div>
           </div>
         `;
@@ -1363,7 +1371,7 @@ function App() {
         <div style="font-size:22px;font-weight:bold;color:#ff36de;margin-top:6px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">My EDC Schedule</div>
         <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:4px;">Created with meetuptimes.com · ${escapeHtml(exportDate)}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px;">
+      <div style="display:flex;flex-direction:column;gap:4px;">
         ${setsHtml || '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px 0;font-size:13px;">No sets in this schedule yet.</div>'}
       </div>
     `;
