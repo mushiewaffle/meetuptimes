@@ -1051,8 +1051,8 @@ function App() {
       // overflow:hidden / text-ellipsis on descendants so html2canvas can't
       // clip glyphs at row boundaries.
       offscreenElement.querySelectorAll('.meetup-card').forEach((card) => {
-        card.style.paddingTop = '10px';
-        card.style.paddingBottom = '10px';
+        card.style.paddingTop = '8px';
+        card.style.paddingBottom = '8px';
         card.querySelectorAll('*').forEach((node) => {
           if (node instanceof HTMLElement) {
             const cs = window.getComputedStyle(node);
@@ -2666,7 +2666,7 @@ If the image isn't readable, reply exactly:
                               sits right-aligned with the time so the card opens
                               with one tight, scannable row instead of a separate
                               "#1 / SAT NIGHT" preamble. */}
-                          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                          <div className="flex items-baseline justify-between gap-2 mb-0.5">
                             <div className="flex items-baseline gap-2 flex-wrap min-w-0">
                               <span className="text-lg font-bold text-white tabular-nums leading-none">
                                 {formatTime(meetup.start)} – {formatTime(meetup.end)}
@@ -2682,7 +2682,7 @@ If the image isn't readable, reply exactly:
                             )}
                           </div>
 
-                          <div className="leading-snug">
+                          <div className="leading-tight">
                             <span className="text-white/50 text-sm">Before</span>{' '}
                             <span className="text-edc-pink font-semibold text-base">
                               {meetup.beforeCommonArtist || 'next artist'}
@@ -2695,7 +2695,7 @@ If the image isn't readable, reply exactly:
                             </span>
                           </div>
 
-                      <div className="text-xs text-white/60 mt-1.5">
+                      <div className="text-xs text-white/60 mt-1">
                         {meetup.schedules.join(' · ')}
                       </div>
 
@@ -2704,7 +2704,7 @@ If the image isn't readable, reply exactly:
                           When filled, the text is in a non-button so html2canvas
                           captures it (App.css hides every <button> in screenshot
                           mode). */}
-                      <div className="mt-2 pt-2 border-t border-edc-purple/15">
+                      <div className="mt-1 pt-1 border-t border-edc-purple/15">
                         {editingLocationIndex === idx ? (
                           <div className="flex items-center gap-2">
                             <input
