@@ -1298,8 +1298,8 @@ function App() {
     offscreenContainer.style.position = 'absolute';
     offscreenContainer.style.left = '-9999px';
     offscreenContainer.style.top = '0';
-    offscreenContainer.style.width = '600px';
-    offscreenContainer.style.padding = '24px 20px 20px';
+    offscreenContainer.style.width = '640px';
+    offscreenContainer.style.padding = '14px 12px 14px';
     offscreenContainer.style.backgroundColor = '#121212';
     offscreenContainer.style.color = '#ffffff';
     offscreenContainer.style.fontFamily = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
@@ -1326,7 +1326,7 @@ function App() {
           // First group: small top margin; subsequent: extra breathing room.
           const isFirst = prevNight === null;
           header = `
-            <div style="display:flex;align-items:center;gap:8px;${isFirst ? 'margin-top:2px' : 'margin-top:14px'};margin-bottom:4px;">
+            <div style="display:flex;align-items:center;gap:8px;${isFirst ? 'margin-top:0' : 'margin-top:10px'};margin-bottom:3px;">
               <div style="font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.25em;color:${dayInfo.color};text-transform:uppercase;text-shadow:0 0 8px ${dayInfo.glow};white-space:nowrap;">${dayInfo.short} · ${escapeHtml(dayInfo.date)}</div>
               <div style="flex:1;height:1px;background-color:${dayInfo.color}55;"></div>
             </div>
@@ -1336,24 +1336,21 @@ function App() {
           prevNight = night;
         }
 
-        // Compact row layout. Old version had a fixed 60-px time column on
-        // the left that was too narrow for "11:15 PM" + a stacked
-        // "ends 12:25 AM" — html2canvas wrapped both at the colon and at
-        // the meridiem, blowing each card to 4-5 visual lines while the
-        // right side sat half-empty. Now: time range collapses to one
-        // line with white-space:nowrap so it never breaks, and the right
-        // column carries the artist + stage as before. Cards average ~50
-        // px tall instead of the ~150-200 px the old layout produced.
+        // Single-line row laid out with flex: time on the left (fixed
+        // width via nowrap), artist in the flexible middle column, stage
+        // pinned to the right (also nowrap). The stage cannot be
+        // visually clipped because it is its own flex item with
+        // white-space:nowrap — if anything has to give, it is the artist
+        // column that wraps to a 2nd line, not the stage. This also
+        // sidesteps html2canvas's spotty support for text-overflow.
         const timeRange = endTime
           ? `${escapeHtml(startTime)} – ${escapeHtml(endTime)}`
           : escapeHtml(startTime);
         return `${header}
-          <div style="display:flex;align-items:flex-start;gap:14px;padding:9px 12px 11px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;">
-            <div style="flex-shrink:0;white-space:nowrap;font-size:13px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;line-height:1.4;padding-top:1px;">${timeRange}</div>
-            <div style="flex:1;min-width:0;">
-              <div style="color:#ff36de;font-weight:600;font-size:14px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(set.artist)}</div>
-              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.4;margin-top:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(set.stage)}</div>
-            </div>
+          <div style="display:flex;align-items:baseline;gap:12px;padding:5px 11px 6px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;font-size:13px;line-height:1.4;">
+            <span style="flex-shrink:0;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;white-space:nowrap;">${timeRange}</span>
+            <span style="flex:1;min-width:0;color:#ff36de;font-weight:600;">${escapeHtml(set.artist)}</span>
+            <span style="flex-shrink:0;color:rgba(45,212,255,0.75);font-size:11px;white-space:nowrap;">${escapeHtml(set.stage)}</span>
           </div>
         `;
       })
@@ -1366,12 +1363,12 @@ function App() {
     });
 
     offscreenContainer.innerHTML = `
-      <div style="text-align:center;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(255,54,222,0.2);">
+      <div style="text-align:center;margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid rgba(255,54,222,0.2);">
         <div style="font-size:10px;letter-spacing:0.3em;color:#2dd4ff;font-family:'Orbitron',sans-serif;text-transform:uppercase;">EDC LAS VEGAS 2026 · MAY 15–17</div>
-        <div style="font-size:22px;font-weight:bold;color:#ff36de;margin-top:6px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">My EDC Schedule</div>
-        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:4px;">Created with meetuptimes.com · ${escapeHtml(exportDate)}</div>
+        <div style="font-size:20px;font-weight:bold;color:#ff36de;margin-top:4px;font-family:'Orbitron',sans-serif;letter-spacing:0.02em;">My EDC Schedule</div>
+        <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-top:3px;">Created with meetuptimes.com · ${escapeHtml(exportDate)}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;flex-direction:column;gap:3px;">
         ${setsHtml || '<div style="text-align:center;color:rgba(255,255,255,0.4);padding:24px 0;font-size:13px;">No sets in this schedule yet.</div>'}
       </div>
     `;
