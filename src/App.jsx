@@ -1105,16 +1105,16 @@ function App() {
       // outer div clipped to (MAP_W × ovalH * scale) to show only the
       // oval. Pins use the same percentages as the live FestivalMap modal
       // because they're anchored to the (full) inner image div.
-      // Crop math, calibrated against the actual 1073×1341 source. The
-      // earlier 560 px width was too narrow and clipped the right side of
-      // the oval (neon GARDEN / circuit GROUNDS were getting cut off).
-      // Festival oval lives at ~x=10→720, y=80→1280 in source pixels;
-      // legend / EDC logo / dates fall outside that window.
+      // Crop window. Reviewer noted clipping at top + right of the oval
+      // with the previous tighter values (710 × 1200), so we now show the
+      // FULL height of the source image and only crop the right legend
+      // panel. That guarantees nothing in the festival oval gets cut off
+      // — slightly more whitespace top/bottom is an acceptable trade.
       const MAP_W = 400;
-      const OVAL_NATIVE_W = 710;
-      const OVAL_NATIVE_H = 1200;
-      const OVAL_OFFSET_X = 10;
-      const OVAL_OFFSET_Y = 80;
+      const OVAL_NATIVE_W = 730;
+      const OVAL_NATIVE_H = 1341;
+      const OVAL_OFFSET_X = 0;
+      const OVAL_OFFSET_Y = 0;
       const mapScale = MAP_W / OVAL_NATIVE_W;
       const innerImgW = Math.round(1073 * mapScale);
       const innerImgH = Math.round(1341 * mapScale);
@@ -1122,19 +1122,32 @@ function App() {
       const cropOffX = -Math.round(OVAL_OFFSET_X * mapScale);
       const cropOffY = -Math.round(OVAL_OFFSET_Y * mapScale);
 
+      // Pin shape: numbered round badge anchored BOTTOM-center at the
+      // landmark coordinate (transform translate(-50%, -100%)) plus a
+      // small filled triangle below the badge whose tip lands exactly on
+      // the landmark. This way the badge body sits just ABOVE the
+      // landmark — the artwork (Zero Gravity sculpture, 64 TAPS, etc.) is
+      // no longer hidden under the pin, while the triangle tail makes
+      // the exact spot unambiguous. CSS-triangle borders survive
+      // html2canvas just fine.
       const pinsHtml = meetupPlan
         .map((meetup, idx) => {
           const c = getStageMapCoords(meetup.beforeStage);
           if (!c) return '';
           return (
             `<div style="position:absolute;left:${c.x}%;top:${c.y}%;` +
-            `transform:translate(-50%,-50%);box-sizing:border-box;` +
-            `width:28px;height:28px;` +
-            `background:#39ff14;color:#000;border:3px solid #000;` +
-            `box-shadow:0 0 0 2px #fff,0 0 12px 2px rgba(57,255,20,0.6);` +
-            `border-radius:50%;text-align:center;line-height:22px;` +
-            `font-weight:900;font-size:14px;` +
-            `font-family:'Helvetica Neue',Inter,Arial,sans-serif;">${idx + 1}</div>`
+            `transform:translate(-50%,-100%);text-align:center;` +
+            `filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));">` +
+            `<div style="box-sizing:border-box;width:24px;height:24px;` +
+            `background:#39ff14;color:#000;border:2px solid #000;` +
+            `border-radius:50%;text-align:center;line-height:20px;` +
+            `font-weight:900;font-size:13px;` +
+            `font-family:'Helvetica Neue',Inter,Arial,sans-serif;">${idx + 1}</div>` +
+            `<div style="width:0;height:0;margin:-3px auto 0;` +
+            `border-left:6px solid transparent;` +
+            `border-right:6px solid transparent;` +
+            `border-top:8px solid #39ff14;"></div>` +
+            `</div>`
           );
         })
         .join('');

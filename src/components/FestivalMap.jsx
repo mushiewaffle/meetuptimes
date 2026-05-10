@@ -108,36 +108,58 @@ export default function FestivalMap({ stage, landmark, onClose }) {
               />
               {coords && (
                 <>
-                  {/* High-contrast pin: electric lime green + thick black
-                      outline so it stays readable against the map's busy
-                      pink / orange / purple / yellow palette where the old
-                      magenta marker disappeared into the background. Outer
-                      black ring → lime ring → black ring → white core gives
-                      a target-reticle look that reads at any size. */}
+                  {/* Pin: lime "balloon" body whose triangular tail tip
+                      lands exactly on the landmark, body sitting just
+                      above. This way the actual landmark (Zero Gravity
+                      sculpture, 64 TAPS, etc.) stays visible instead of
+                      being covered by the marker. Pulsing halo at the
+                      tail tip draws attention without obscuring anything.
+                      pointer-events-none keeps the backdrop click-to-close
+                      working through the pin. */}
                   <div
-                    className="absolute pointer-events-none"
+                    className="absolute pointer-events-none flex flex-col items-center"
+                    style={{
+                      left: `${coords.x}%`,
+                      top: `${coords.y}%`,
+                      transform: 'translate(-50%, -100%)',
+                      filter: 'drop-shadow(0 2px 3px rgba(0,0,0,0.6))',
+                    }}
+                  >
+                    <div
+                      className="rounded-full"
+                      style={{
+                        width: 22,
+                        height: 22,
+                        backgroundColor: '#39ff14',
+                        border: '3px solid #000',
+                        boxShadow: '0 0 0 2px #fff',
+                      }}
+                    />
+                    <div
+                      style={{
+                        width: 0,
+                        height: 0,
+                        marginTop: -2,
+                        borderLeft: '6px solid transparent',
+                        borderRight: '6px solid transparent',
+                        borderTop: '9px solid #39ff14',
+                      }}
+                    />
+                  </div>
+                  {/* Pulse ring centered exactly on the landmark coordinate
+                      so the eye is drawn to the exact spot the pin tail is
+                      pointing at. Sits behind the body via lower z-index. */}
+                  <div
+                    className="absolute pointer-events-none rounded-full animate-ping"
                     style={{
                       left: `${coords.x}%`,
                       top: `${coords.y}%`,
                       transform: 'translate(-50%, -50%)',
+                      width: 18,
+                      height: 18,
+                      backgroundColor: 'rgba(57,255,20,0.5)',
                     }}
-                  >
-                    <div className="relative w-12 h-12 flex items-center justify-center">
-                      <div
-                        className="absolute inset-0 rounded-full animate-ping"
-                        style={{ backgroundColor: 'rgba(57,255,20,0.45)' }}
-                      />
-                      <div
-                        className="absolute inset-1 rounded-full"
-                        style={{
-                          backgroundColor: '#39ff14',
-                          boxShadow:
-                            '0 0 0 3px #000, 0 0 0 5px #fff, 0 0 18px 6px rgba(57,255,20,0.7)',
-                        }}
-                      />
-                      <div className="relative w-3 h-3 rounded-full bg-black" />
-                    </div>
-                  </div>
+                  />
                 </>
               )}
               {!coords && (
