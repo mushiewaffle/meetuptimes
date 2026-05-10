@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { parseISO, format } from 'date-fns';
 import html2canvas from 'html2canvas';
 import './App.css';
@@ -7,9 +7,36 @@ import './App.css';
 import FestivalScheduleUploader from './components/FestivalScheduleUploader';
 import VenmoTipJar from './components/VenmoTipJar';
 import EDCPicker from './components/EDCPicker';
+import FestivalMap from './components/FestivalMap';
 // Import removed - no longer needed
 import findSharedGaps from './utils/findSharedGaps';
 import festivalSchedule from './data/festivalSchedule';
+import { getDayInfo, getStageMeetupSpot } from './utils/stageZones';
+
+// Day separator drawn above the first set of each festival night in long
+// schedule lists. Visually anchored in the night's color (Fri = cyan,
+// Sat = pink, Sun = purple) and a fading horizontal rule so groups read as
+// distinct sections without screaming at the user.
+function DayHeader({ night, compact = false }) {
+  const info = getDayInfo(night);
+  if (!info) return null;
+  return (
+    <div className={`flex items-center gap-2 ${compact ? 'mt-2 mb-1 first:mt-0' : 'mt-4 mb-1.5 first:mt-1'}`}>
+      <div
+        className="font-orbitron text-[10px] font-bold tracking-[0.25em] uppercase whitespace-nowrap"
+        style={{ color: info.color, textShadow: `0 0 8px ${info.glow}` }}
+      >
+        {info.short} · {info.date}
+      </div>
+      <div
+        className="flex-1 h-px"
+        style={{
+          background: `linear-gradient(to right, ${info.color}88, ${info.color}11 60%, transparent)`,
+        }}
+      />
+    </div>
+  );
+}
 
 // Add Capacitor imports for native filesystem support
 import { Capacitor } from '@capacitor/core';
@@ -311,6 +338,10 @@ function App() {
   const [editingLocationIndex, setEditingLocationIndex] = useState(null);
   const [editingLocation, setEditingLocation] = useState('');
   const [noGapsFound, setNoGapsFound] = useState(false);
+
+  // FestivalMap modal: open when set, closed when null. Holds the meetup
+  // index whose stage should be pinned on the map.
+  const [mapModalIdx, setMapModalIdx] = useState(null);
   
   // These variables have been removed as they're no longer needed
   
@@ -853,20 +884,33 @@ function App() {
       const getAdjustedSortTime = (date) => {
         const hours = date.getHours();
         const minutes = date.getMinutes();
-        
+
         // Calculate hours offset from 8am (0-23 hours scale)
         // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
         const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
-        
+
         // Return a comparable value (hours * 60 + minutes) for easy sorting
         return adjustedHours * 60 + minutes;
       };
 
-      // Sort gaps: recommended first, then by festival time (8am as starting point)
+      // Festival-night ordinal so gaps sort Fri → Sat → Sun first, then by
+      // time within each night. Without this, the adjusted-time sort
+      // interleaves nights (e.g. FRI 7:45 PM and SAT 7:45 PM end up adjacent
+      // because they share the same adjusted-time), which defeats the day
+      // separators and makes the list confusing to scan.
+      const NIGHT_RANK = { Fri: 0, Sat: 1, Sun: 2 };
+      const getNightRank = (start) => {
+        const night = getFestivalNight(start);
+        return night && night in NIGHT_RANK ? NIGHT_RANK[night] : 3;
+      };
+
+      // Sort gaps: recommended first, then by night, then by festival time
       gaps.sort((a, b) => {
         if (a.isRecommended !== b.isRecommended) {
           return a.isRecommended ? -1 : 1;
         }
+        const nightDiff = getNightRank(a.start) - getNightRank(b.start);
+        if (nightDiff !== 0) return nightDiff;
         const timeA = getAdjustedSortTime(new Date(a.start));
         const timeB = getAdjustedSortTime(new Date(b.start));
         return timeA - timeB;
@@ -1263,22 +1307,45 @@ function App() {
     offscreenContainer.style.borderRadius = '12px';
     offscreenContainer.style.boxSizing = 'border-box';
 
-    const setsHtml = schedule.sets
+    // Group sets by night so the export shows the same Fri / Sat / Sun
+    // section headers the user sees in-app — multi-day schedules read as
+    // distinct sections instead of one wall.
+    const sortedSets = schedule.sets
       .slice()
-      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .sort((a, b) => new Date(a.start) - new Date(b.start));
+
+    let prevNight = null;
+    const setsHtml = sortedSets
       .map((set) => {
         const night = getFestivalNight(set.start) || '';
         const startTime = formatTime(set.start);
         const endTime = set.end ? formatTime(set.end) : null;
-        return `
+        const dayInfo = getDayInfo(night);
+
+        let header = '';
+        if (night && night !== prevNight && dayInfo) {
+          // First group: small top margin; subsequent: extra breathing room.
+          const isFirst = prevNight === null;
+          header = `
+            <div style="display:flex;align-items:center;gap:8px;${isFirst ? 'margin-top:2px' : 'margin-top:14px'};margin-bottom:4px;">
+              <div style="font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.25em;color:${dayInfo.color};text-transform:uppercase;text-shadow:0 0 8px ${dayInfo.glow};white-space:nowrap;">${dayInfo.short} · ${escapeHtml(dayInfo.date)}</div>
+              <div style="flex:1;height:1px;background:linear-gradient(to right, ${dayInfo.color}88, ${dayInfo.color}11 60%, transparent);"></div>
+            </div>
+          `;
+          prevNight = night;
+        } else if (night && !prevNight) {
+          prevNight = night;
+        }
+
+        return `${header}
           <div style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;">
-            <div style="width:64px;text-align:center;flex-shrink:0;">
-              <div style="font-size:10px;letter-spacing:0.2em;color:rgba(45,212,255,0.85);font-family:'Orbitron',sans-serif;">${escapeHtml(night)}</div>
-              <div style="font-size:14px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;margin-top:2px;">${escapeHtml(startTime)}</div>
+            <div style="width:60px;text-align:center;flex-shrink:0;">
+              <div style="font-size:14px;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;line-height:1.2;">${escapeHtml(startTime)}</div>
+              ${endTime ? `<div style="font-size:10px;color:rgba(255,255,255,0.4);font-variant-numeric:tabular-nums;line-height:1.2;margin-top:2px;">ends ${escapeHtml(endTime)}</div>` : ''}
             </div>
             <div style="flex:1;min-width:0;">
               <div style="color:#ff36de;font-weight:600;font-size:14px;line-height:1.3;">${escapeHtml(set.artist)}</div>
-              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.3;margin-top:2px;">${escapeHtml(set.stage)}${endTime ? ` <span style="color:rgba(255,255,255,0.4)">· ends ${escapeHtml(endTime)}</span>` : ''}</div>
+              <div style="color:rgba(45,212,255,0.75);font-size:11px;line-height:1.3;margin-top:2px;">${escapeHtml(set.stage)}</div>
             </div>
           </div>
         `;
@@ -1453,8 +1520,13 @@ function App() {
       const plan = selectedIndices.map(index => {
         const gap = meetupGaps[index];
         if (!gap) return null;
-        
-        // Simply use the gap's existing information without recalculating
+
+        // Pre-fill `customLocation` with a landmark near the upcoming common
+        // set's stage (drawn from the EDC 2026 festival map). Saves the user
+        // from typing the obvious default, but keeps the field editable —
+        // `isAutoLocation` lets the UI mark it as a suggestion until the
+        // user explicitly modifies or saves their own text.
+        const suggestedSpot = getStageMeetupSpot(gap.beforeStage);
         return {
           id: `meetup-${Date.now()}-${index}`,
           start: gap.start,
@@ -1463,27 +1535,31 @@ function App() {
           beforeStage: gap.beforeStage,
           beforeCommonArtist: gap.beforeCommonArtist,
           isRecommended: gap.schedules.length === schedules.length,
-          customLocation: '' // Initialize custom location field
+          customLocation: suggestedSpot,
+          isAutoLocation: !!suggestedSpot,
         };
       })
       .filter(Boolean);
       
-      // Sort by start time
-      // Helper function to adjust time for festival sorting (8am as starting point)
+      // Sort plan by festival night first, then by clock time within the
+      // night. The day-separator headers in the meetup-plan UI rely on
+      // consecutive same-night cards — a pure adjusted-time sort interleaves
+      // FRI/SAT cards (same time-of-night) and breaks the visual grouping.
       const getAdjustedSortTime = (date) => {
         const hours = date.getHours();
         const minutes = date.getMinutes();
-        
-        // Calculate hours offset from 8am (0-23 hours scale)
-        // Hours 8-23 come first (0-15), then hours 0-7 (16-23)
         const adjustedHours = (hours >= 8) ? hours - 8 : hours + 16;
-        
-        // Return a comparable value (hours * 60 + minutes) for easy sorting
         return adjustedHours * 60 + minutes;
       };
-      
-      // Sort by festival time (8am as starting point)
+      const NIGHT_RANK = { Fri: 0, Sat: 1, Sun: 2 };
+      const getNightRank = (start) => {
+        const night = getFestivalNight(start);
+        return night && night in NIGHT_RANK ? NIGHT_RANK[night] : 3;
+      };
+
       plan.sort((a, b) => {
+        const nightDiff = getNightRank(a.start) - getNightRank(b.start);
+        if (nightDiff !== 0) return nightDiff;
         const timeA = getAdjustedSortTime(new Date(a.start));
         const timeB = getAdjustedSortTime(new Date(b.start));
         return timeA - timeB;
@@ -1609,13 +1685,16 @@ function App() {
    */
   const saveLocation = () => {
     if (editingLocationIndex === null) return;
-    
+
+    // Once the user explicitly saves, the spot is "theirs" — clear the
+    // isAutoLocation flag so the UI stops labelling it as a map suggestion.
     const updatedPlan = [...meetupPlan];
     updatedPlan[editingLocationIndex] = {
       ...updatedPlan[editingLocationIndex],
-      customLocation: editingLocation.trim()
+      customLocation: editingLocation.trim(),
+      isAutoLocation: false,
     };
-    
+
     setMeetupPlan(updatedPlan);
     setEditingLocationIndex(null);
     setEditingLocation('');
@@ -2082,11 +2161,29 @@ If the image isn't readable, reply exactly:
                       {/* Sets section */}
                       <div className="mt-2">
                         <div className="flex flex-col space-y-1">
-                          {/* Show only first 3 sets when not expanded, or all sets when expanded */}
-                          {schedule.sets.length > 0 && (expandedSchedules[idx] ? schedule.sets : schedule.sets.slice(0, 3)).map((set, setIdx) => (
-                              editingSetInfo && editingSetInfo.scheduleIndex === idx && editingSetInfo.setIndex === setIdx ? (
+                          {/* Show only first 3 sets when not expanded, or all sets when expanded.
+                              Sets are interleaved with DayHeader dividers when the festival
+                              night changes (Fri → Sat → Sun) so multi-day schedules read as
+                              clearly grouped sections instead of one undifferentiated wall. */}
+                          {(() => {
+                            const visibleSets = schedule.sets.length > 0
+                              ? (expandedSchedules[idx] ? schedule.sets : schedule.sets.slice(0, 3))
+                              : [];
+                            let prevNight = null;
+                            return visibleSets.map((set, setIdx) => {
+                              const night = getFestivalNight(set.start);
+                              const showHeader = night && night !== prevNight;
+                              // Only update prevNight on a valid night so a stray
+                              // null-night row doesn't reset the tracker and trigger
+                              // a duplicate header on the next valid row.
+                              if (night) prevNight = night;
+                              const isEditing = editingSetInfo && editingSetInfo.scheduleIndex === idx && editingSetInfo.setIndex === setIdx;
+                              return (
+                                <Fragment key={`row-${setIdx}`}>
+                                  {showHeader && <DayHeader night={night} compact />}
+                                  {isEditing ? (
                                 // In-place editing for an existing set
-                                <div key={`edit-${setIdx}`} className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 bg-black/20 rounded-sm border-l-2 border-edc-pink/40" ref={editSetFormRef}>
+                                <div className="grid grid-cols-[1fr_auto_1fr] md:grid-cols-3 gap-2 text-sm py-2 bg-black/20 rounded-sm border-l-2 border-edc-pink/40" ref={editSetFormRef}>
                                   <input
                                     type="text"
                                     value={editingSetInfo?.set?.artist || ''}
@@ -2172,29 +2269,28 @@ If the image isn't readable, reply exactly:
                                 // Note: explicit `text-left` is required because
                                 // App.css sets `text-align: center` globally on #root.
                                 <div
-                                  key={setIdx}
                                   className="flex items-center gap-3 py-2.5 px-3 bg-black/30 rounded-md border-l-2 border-edc-purple/40"
                                 >
-                                  <div className="shrink-0 w-20 text-center">
-                                    <div className="text-[10px] font-orbitron tracking-widest uppercase text-edc-blue/80 leading-tight">
-                                      {getFestivalNight(set.start) || '—'}
-                                    </div>
-                                    <div className="text-sm text-white tabular-nums leading-tight mt-0.5 font-semibold whitespace-nowrap">
+                                  <div className="shrink-0 w-16 text-center">
+                                    <div className="text-sm text-white tabular-nums leading-tight font-semibold whitespace-nowrap">
                                       {formatTime(set.start)}
                                     </div>
+                                    {set.end && (
+                                      <div className="text-[10px] text-white/40 tabular-nums leading-tight mt-0.5 whitespace-nowrap">
+                                        ends {formatTime(set.end)}
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex-1 min-w-0 text-left">
                                     <div className="text-edc-pink font-semibold leading-tight truncate text-sm">{set.artist}</div>
-                                    <div className="text-edc-blue/70 text-[11px] leading-tight truncate mt-0.5">
-                                      {set.stage}
-                                      {set.end && (
-                                        <span className="text-white/40 ml-1.5">· ends {formatTime(set.end)}</span>
-                                      )}
-                                    </div>
+                                    <div className="text-edc-blue/70 text-[11px] leading-tight truncate mt-0.5">{set.stage}</div>
                                   </div>
                                 </div>
-                              )
-                            ))}
+                              )}
+                                </Fragment>
+                              );
+                            });
+                          })()}
                             
                             {/* Add New Set In-place Row */}
                             {isAddingSetToSchedule === idx && (
@@ -2549,45 +2645,65 @@ If the image isn't readable, reply exactly:
               <div className="text-white/40 text-xs text-center mb-3">Created with meetuptimes.com • {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
             
               <div className="space-y-4 text-left">
-                {meetupPlan.map((meetup, idx) => {
-                  const night = getFestivalNight(meetup.start);
-                  return (
-                    <div
-                      key={meetup.id || idx}
-                      className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-3 text-left meetup-card"
-                    >
-                      {/* Time + day on a single header line. The day badge
-                          sits right-aligned with the time so the card opens
-                          with one tight, scannable row instead of a separate
-                          "#1 / SAT NIGHT" preamble. */}
-                      <div className="flex items-baseline justify-between gap-2 mb-1.5">
-                        <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                          <span className="text-lg font-bold text-white tabular-nums leading-none">
-                            {formatTime(meetup.start)} – {formatTime(meetup.end)}
-                          </span>
-                          <span className="text-white/40 text-xs leading-none">
-                            · {formatDuration(meetup.start, meetup.end)}
-                          </span>
-                        </div>
-                        {night && (
-                          <span className="shrink-0 text-[11px] font-orbitron tracking-widest text-edc-blue uppercase">
-                            {night}
-                          </span>
-                        )}
-                      </div>
+                {(() => {
+                  // Group meetups by festival night with a DayHeader between
+                  // groups, mirroring the schedule list. Multi-day meetup
+                  // plans now read as clearly bounded sections (Fri / Sat /
+                  // Sun) instead of one long undifferentiated stream.
+                  let prevNight = null;
+                  return meetupPlan.map((meetup, idx) => {
+                    const night = getFestivalNight(meetup.start);
+                    const showHeader = night && night !== prevNight;
+                    if (night) prevNight = night;
+                    return (
+                      <Fragment key={meetup.id || idx}>
+                        {showHeader && <DayHeader night={night} />}
+                        <div
+                          className="rounded-xl border-l-4 border-edc-pink bg-edc-purple/[0.04] px-4 py-3 text-left meetup-card"
+                        >
+                          {/* Time + day on a single header line. The day badge
+                              sits right-aligned with the time so the card opens
+                              with one tight, scannable row instead of a separate
+                              "#1 / SAT NIGHT" preamble. */}
+                          <div className="flex items-baseline justify-between gap-2 mb-1.5">
+                            <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                              <span className="text-lg font-bold text-white tabular-nums leading-none">
+                                {formatTime(meetup.start)} – {formatTime(meetup.end)}
+                              </span>
+                              <span className="text-white/40 text-xs leading-none">
+                                · {formatDuration(meetup.start, meetup.end)}
+                              </span>
+                            </div>
+                            {night && (
+                              <span className="shrink-0 text-[11px] font-orbitron tracking-widest text-edc-blue uppercase">
+                                {night}
+                              </span>
+                            )}
+                          </div>
 
-                      <div className="leading-snug">
-                        <span className="text-white/50 text-sm">Before</span>{' '}
-                        <span className="text-edc-pink font-semibold text-base">
-                          {meetup.beforeCommonArtist || 'next artist'}
-                        </span>
-                      </div>
-                      <div className="flex items-baseline gap-1.5 mt-0.5">
-                        <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
-                        <span className="text-edc-blue/80 text-xs">
-                          {meetup.beforeStage || 'unknown stage'}
-                        </span>
-                      </div>
+                          <div className="leading-snug">
+                            <span className="text-white/50 text-sm">Before</span>{' '}
+                            <span className="text-edc-pink font-semibold text-base">
+                              {meetup.beforeCommonArtist || 'next artist'}
+                            </span>
+                          </div>
+                          <div className="flex items-baseline gap-1.5 mt-0.5 flex-wrap">
+                            <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
+                            <span className="text-edc-blue/80 text-xs">
+                              {meetup.beforeStage || 'unknown stage'}
+                            </span>
+                            {/* "Show on map" — opens a modal pinning this stage on
+                                the official EDC 2026 festival map so users can
+                                navigate to the meetup spot visually. Hidden in
+                                screenshots so the exported image stays clean. */}
+                            <button
+                              onClick={() => setMapModalIdx(idx)}
+                              className="text-[10px] font-orbitron tracking-wider uppercase text-edc-pink/70 hover:text-edc-pink underline-offset-2 hover:underline transition-colors hide-in-screenshot ml-auto"
+                              title="Show this stage on the festival map"
+                            >
+                              📍 Show on map
+                            </button>
+                          </div>
 
                       <div className="text-xs text-white/60 mt-1.5">
                         {meetup.schedules.join(' · ')}
@@ -2628,7 +2744,17 @@ If the image isn't readable, reply exactly:
                           // (still readable, still captured fully).
                           <div className="flex items-start gap-2 text-sm pb-1">
                             <span className="text-edc-pink/80 shrink-0 leading-tight">📍</span>
-                            <span className="flex-1 text-white/90 leading-tight break-words min-w-0">{meetup.customLocation}</span>
+                            <span className="flex-1 text-white/90 leading-tight break-words min-w-0">
+                              {meetup.customLocation}
+                              {meetup.isAutoLocation && (
+                                <span
+                                  className="ml-2 text-[9px] font-orbitron tracking-widest uppercase text-edc-blue/60 align-middle hide-in-screenshot"
+                                  title="Suggested from the EDC 2026 festival map. Tap edit to change."
+                                >
+                                  · from map
+                                </span>
+                              )}
+                            </span>
                             <button
                               onClick={() => startEditingLocation(idx)}
                               className="text-edc-blue/50 hover:text-edc-blue/80 shrink-0 transition-colors hide-in-screenshot p-0.5"
@@ -2650,8 +2776,10 @@ If the image isn't readable, reply exactly:
                         )}
                       </div>
                     </div>
-                  );
-                })}
+                      </Fragment>
+                    );
+                  });
+                })()}
               </div>
             </div>
             
@@ -2857,6 +2985,17 @@ If the image isn't readable, reply exactly:
         onSave={handleEDCPickerSave}
         onCancel={() => setPickerOpen(false)}
       />
+
+      {/* Festival map modal — opens from "Show on map" on each meetup card,
+          drops a pin on the upcoming common-set stage. Reads from the live
+          meetupPlan so the latest custom landmark text is reflected. */}
+      {mapModalIdx !== null && meetupPlan[mapModalIdx] && (
+        <FestivalMap
+          stage={meetupPlan[mapModalIdx].beforeStage}
+          landmark={meetupPlan[mapModalIdx].customLocation}
+          onClose={() => setMapModalIdx(null)}
+        />
+      )}
     </div>
   );
 }
