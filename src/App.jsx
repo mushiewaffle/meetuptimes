@@ -1520,11 +1520,10 @@ function App() {
         const gap = meetupGaps[index];
         if (!gap) return null;
 
-        // Pre-fill `customLocation` with a landmark near the upcoming common
-        // set's stage (drawn from the EDC 2026 festival map). Saves the user
-        // from typing the obvious default, but keeps the field editable —
-        // `isAutoLocation` lets the UI mark it as a suggestion until the
-        // user explicitly modifies or saves their own text.
+        // Pre-fill `customLocation` with a recognizable landmark near the
+        // upcoming common-set's stage so the meetup card opens with a
+        // sensible default instead of an empty "Add meetup spot" prompt.
+        // The user can still edit or clear it before sharing.
         const suggestedSpot = getStageMeetupSpot(gap.beforeStage);
         return {
           id: `meetup-${Date.now()}-${index}`,
@@ -1535,7 +1534,6 @@ function App() {
           beforeCommonArtist: gap.beforeCommonArtist,
           isRecommended: gap.schedules.length === schedules.length,
           customLocation: suggestedSpot,
-          isAutoLocation: !!suggestedSpot,
         };
       })
       .filter(Boolean);
@@ -1685,13 +1683,10 @@ function App() {
   const saveLocation = () => {
     if (editingLocationIndex === null) return;
 
-    // Once the user explicitly saves, the spot is "theirs" — clear the
-    // isAutoLocation flag so the UI stops labelling it as a map suggestion.
     const updatedPlan = [...meetupPlan];
     updatedPlan[editingLocationIndex] = {
       ...updatedPlan[editingLocationIndex],
       customLocation: editingLocation.trim(),
-      isAutoLocation: false,
     };
 
     setMeetupPlan(updatedPlan);
@@ -2734,14 +2729,6 @@ If the image isn't readable, reply exactly:
                             <span className="text-edc-pink/80 shrink-0 leading-tight">📍</span>
                             <span className="flex-1 text-white/90 leading-tight break-words min-w-0">
                               {meetup.customLocation}
-                              {meetup.isAutoLocation && (
-                                <span
-                                  className="ml-2 text-[9px] font-orbitron tracking-widest uppercase text-edc-blue/60 align-middle hide-in-screenshot"
-                                  title="Suggested from the EDC 2026 festival map. Tap edit to change."
-                                >
-                                  · from map
-                                </span>
-                              )}
                             </span>
                             <button
                               onClick={() => startEditingLocation(idx)}
