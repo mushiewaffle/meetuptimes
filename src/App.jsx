@@ -1105,11 +1105,16 @@ function App() {
       // outer div clipped to (MAP_W × ovalH * scale) to show only the
       // oval. Pins use the same percentages as the live FestivalMap modal
       // because they're anchored to the (full) inner image div.
-      const MAP_W = 320;
-      const OVAL_NATIVE_W = 560;
-      const OVAL_NATIVE_H = 1220;
-      const OVAL_OFFSET_X = 20;
-      const OVAL_OFFSET_Y = 70;
+      // Crop math, calibrated against the actual 1073×1341 source. The
+      // earlier 560 px width was too narrow and clipped the right side of
+      // the oval (neon GARDEN / circuit GROUNDS were getting cut off).
+      // Festival oval lives at ~x=10→720, y=80→1280 in source pixels;
+      // legend / EDC logo / dates fall outside that window.
+      const MAP_W = 400;
+      const OVAL_NATIVE_W = 710;
+      const OVAL_NATIVE_H = 1200;
+      const OVAL_OFFSET_X = 10;
+      const OVAL_OFFSET_Y = 80;
       const mapScale = MAP_W / OVAL_NATIVE_W;
       const innerImgW = Math.round(1073 * mapScale);
       const innerImgH = Math.round(1341 * mapScale);
@@ -1174,15 +1179,13 @@ function App() {
         offscreenElement.insertBefore(mapColumn, offscreenElement.firstChild);
       }
 
-      // Position the clone offscreen. Width is bumped from 600 → 940 to
-      // accommodate the side-by-side layout; cards keep ~560 px of width
-      // (matches what users were seeing before) plus the 320 px map and
-      // 16 px gap.
+      // Position the clone offscreen. Width = 1000 leaves ~580 px for the
+      // cards column (940 → 1000 to accommodate the wider 400-px map).
       offscreenContainer = document.createElement('div');
       offscreenContainer.style.position = 'absolute';
       offscreenContainer.style.left = '-9999px';
       offscreenContainer.style.top = '0';
-      offscreenContainer.style.width = '940px';
+      offscreenContainer.style.width = '1000px';
       offscreenContainer.style.padding = '4px';
       offscreenContainer.appendChild(offscreenElement);
       document.body.appendChild(offscreenContainer);

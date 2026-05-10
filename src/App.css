@@ -58,10 +58,24 @@
 }
 
 .screenshot-mode .meetup-card {
-  margin-bottom: 16px !important;
+  margin-bottom: 10px !important;
+  padding: 8px 12px !important;
   background-color: rgba(20, 20, 20, 0.7) !important;
   border-radius: 8px !important;
 }
+
+/* Screenshot-mode card compaction so the meetup-times list lands at a
+   similar total height as the cropped festival-map column on the right.
+   The native UI keeps generous padding for tap targets; the export can
+   afford to tighten everything since it's not interactive. */
+.screenshot-mode .meetup-card .text-lg { font-size: 14px !important; }
+.screenshot-mode .meetup-card .text-base { font-size: 13px !important; }
+.screenshot-mode .meetup-card .text-sm { font-size: 12px !important; }
+.screenshot-mode .meetup-card .mb-1\.5 { margin-bottom: 4px !important; }
+.screenshot-mode .meetup-card .mt-0\.5 { margin-top: 2px !important; }
+.screenshot-mode .meetup-card .mt-1\.5 { margin-top: 4px !important; }
+.screenshot-mode .meetup-card .mt-2 { margin-top: 6px !important; }
+.screenshot-mode .meetup-card .pt-2 { padding-top: 4px !important; }
 
 .screenshot-header {
   display: none;

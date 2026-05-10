@@ -31,47 +31,48 @@ export function getDayInfo(night) {
   return DAY_INFO[night] || null;
 }
 
-// Default meetup spot suggestions — each stage maps to a recognizable
-// landmark or feature drawn from the official EDC Las Vegas 2026 festival
-// map (Insomniac, May 15-17 2026). Used to pre-fill the "📍 meetup spot"
-// field on the generated meetup plan so a meeting point is suggested by
-// default; users can still edit / clear it. Picks features that are easy
-// to spot from a distance and unique on the map (tall sculptures, art
-// cars, named bars/water stations) so two friends arriving from different
-// parts of the festival can actually find each other; the stage itself is
-// typically too big and packed to be a useful landmark.
+// Default meetup spot suggestions — each stage maps to a SPECIFIC named
+// landmark within ~30m of the upcoming common-set's stage, drawn from the
+// official EDC Las Vegas 2026 festival map (Insomniac, May 15-17 2026).
+// The bar is high: art cars, sculptures, art pieces, and small named
+// bars/water stations are fine because two friends can actually find
+// each other at one. Stage entrances ("bass POD main entrance"), giant
+// stages themselves, and vague areas ("Daisy Lane") are NOT — they're
+// crowds of thousands. When no specific landmark exists nearby we
+// return empty and the UI falls back to "Add meetup spot" so the user
+// can name a real one themselves rather than seeing a useless guess.
 const STAGE_MEETUP_SPOTS = {
   // North — main stage area
   'Kinetic Field': 'Zero Gravity sculpture · kineticFIELD entrance',
-  'Casa Bacardí': 'Casa Bacardí bar entrance',
+  'Casa Bacardí': 'Casa Bacardí bar entrance', // small named bar venue
 
   // Daisy Lane — north-center
   'Stereo Bloom': 'Flower Tower · Stereo Bloom',
-  'Insomniac Fridays': 'Insomniac Fridays venue · Daisy Lane',
+  'Insomniac Fridays': 'Anima art piece · Kinetic Trail near Insomniac Fridays',
   'BeatBox Art Car': 'BeatBox Art Car · Daisy Lane',
   'Picnic Party Art Car': 'Picnic Party Art Car · Daisy Lane',
 
   // East side
   'Quantum Valley': 'Star Fighter art piece · Quantum Valley',
-  'Neon Garden': 'I/O Disco · Neon Garden',
+  'Neon Garden': 'I/O Disco · Neon Garden', // small named structure
   'Forest House': 'Elder Mother sculpture · Pixel Forest',
 
   // West side
-  'Bionic Jungle': 'Paradisium art · Bionic Jungle',
+  'Bionic Jungle': 'Paradisium art piece · Bionic Jungle',
   'Cosmic Meadow': '64 TAPS water station · Cosmic Meadow',
 
   // South side
-  Basspod: 'Bass Pod main entrance',
+  // Bass Pod has no specific labelled landmark on the published map —
+  // empty fallback so the user names a real meeting point themselves.
+  Basspod: '',
   'Circuit Grounds': 'Verizon Viewing Deck · Circuit Grounds',
-  Wasteland: 'Salvage City Supper Club · Wasteland',
+  Wasteland: 'Salvage City Supper Club · Wasteland', // small named venue
 
   // Center — Rainbow Bazaar / Downtown EDC
   'Takis Rave Hangar': 'Crazy Dumbos carousel · Rainbow Bazaar',
-  'Electrolit Hydration House': 'Downtown EDC plaza · outside Electrolit House',
+  'Electrolit Hydration House': 'Lunchbox Packs booth · Downtown EDC',
 
-  // YeeDC! is not labelled on the published 2026 map — return empty so the
-  // UI falls back to "Add meetup spot" and the user picks their own rather
-  // than seeing a guess.
+  // YeeDC! is not labelled on the published 2026 map.
   'YeeDC!': '',
 };
 
