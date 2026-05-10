@@ -1347,7 +1347,7 @@ function App() {
           ? `${escapeHtml(startTime)} – ${escapeHtml(endTime)}`
           : escapeHtml(startTime);
         return `${header}
-          <div style="display:flex;align-items:baseline;gap:12px;padding:5px 11px 6px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;font-size:13px;line-height:1.4;">
+          <div style="display:flex;align-items:center;gap:12px;padding:7px 11px;background:rgba(0,0,0,0.35);border-left:3px solid rgba(153,102,255,0.5);border-radius:6px;font-size:13px;line-height:1.2;">
             <span style="flex-shrink:0;font-weight:600;color:#ffffff;font-variant-numeric:tabular-nums;white-space:nowrap;">${timeRange}</span>
             <span style="flex:1;min-width:0;color:#ff36de;font-weight:600;">${escapeHtml(set.artist)}</span>
             <span style="flex-shrink:0;color:rgba(45,212,255,0.75);font-size:11px;white-space:nowrap;">${escapeHtml(set.stage)}</span>
