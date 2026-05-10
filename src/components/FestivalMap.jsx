@@ -108,12 +108,12 @@ export default function FestivalMap({ stage, landmark, onClose }) {
               />
               {coords && (
                 <>
-                  {/* Pin: a chunky high-contrast marker (white core + magenta
-                      ring + dark outline) plus a separate animate-ping halo
-                      layer. The static layers stay visible against the map's
-                      busy color palette while the halo draws the eye toward
-                      it; pointer-events-none keeps backdrop click-to-close
-                      working through the pin. */}
+                  {/* High-contrast pin: electric lime green + thick black
+                      outline so it stays readable against the map's busy
+                      pink / orange / purple / yellow palette where the old
+                      magenta marker disappeared into the background. Outer
+                      black ring → lime ring → black ring → white core gives
+                      a target-reticle look that reads at any size. */}
                   <div
                     className="absolute pointer-events-none"
                     style={{
@@ -122,10 +122,20 @@ export default function FestivalMap({ stage, landmark, onClose }) {
                       transform: 'translate(-50%, -50%)',
                     }}
                   >
-                    <div className="relative w-10 h-10 flex items-center justify-center">
-                      <div className="absolute inset-0 rounded-full bg-edc-pink/40 animate-ping" />
-                      <div className="absolute inset-2 rounded-full bg-edc-pink shadow-[0_0_18px_6px_rgba(255,54,222,0.7)] ring-2 ring-black" />
-                      <div className="relative w-3 h-3 rounded-full bg-white" />
+                    <div className="relative w-12 h-12 flex items-center justify-center">
+                      <div
+                        className="absolute inset-0 rounded-full animate-ping"
+                        style={{ backgroundColor: 'rgba(57,255,20,0.45)' }}
+                      />
+                      <div
+                        className="absolute inset-1 rounded-full"
+                        style={{
+                          backgroundColor: '#39ff14',
+                          boxShadow:
+                            '0 0 0 3px #000, 0 0 0 5px #fff, 0 0 18px 6px rgba(57,255,20,0.7)',
+                        }}
+                      />
+                      <div className="relative w-3 h-3 rounded-full bg-black" />
                     </div>
                   </div>
                 </>

@@ -104,12 +104,14 @@ body, html {
   --tw-gradient-to: var(--edc-purple);
 }
 
-.bg-festival-pattern {
-  background-image: url('/festival-bg.jpg');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
+/* The legacy `.bg-festival-pattern` rule referenced /festival-bg.jpg, an
+   asset that was never shipped with the repo (the build emits a runtime
+   warning about it). On dev that 404 falls through to Vite's SPA HTML
+   shim, html2canvas reads it as a 0×0 image and throws InvalidStateError
+   from createPattern, killing both Save-as-Image flows. The class is
+   still applied in App.jsx as a future hook — just leave it as a no-op
+   here so existing markup keeps working without the crashing url(). */
+.bg-festival-pattern { /* no background-image — see comment above */ }
 
 @media print {
   .bg-festival-pattern {

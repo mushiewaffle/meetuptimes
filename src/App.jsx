@@ -11,7 +11,7 @@ import FestivalMap from './components/FestivalMap';
 // Import removed - no longer needed
 import findSharedGaps from './utils/findSharedGaps';
 import festivalSchedule from './data/festivalSchedule';
-import { getDayInfo, getStageMeetupSpot } from './utils/stageZones';
+import { getDayInfo, getStageMeetupSpot, getStageMapCoords } from './utils/stageZones';
 
 // Day separator drawn above the first set of each festival night in long
 // schedule lists. Visually anchored in the night's color (Fri = cyan,
@@ -20,6 +20,11 @@ import { getDayInfo, getStageMeetupSpot } from './utils/stageZones';
 function DayHeader({ night, compact = false }) {
   const info = getDayInfo(night);
   if (!info) return null;
+  // The right-hand divider used to be a fading linear-gradient stripe, but
+  // html2canvas chokes on a 1px-tall gradient flex child (createPattern on
+  // a 0-height pattern source) and crashed the Save-as-Image flow. A flat
+  // semi-transparent line in the night's color reads almost identically
+  // and renders cleanly in both the live UI and the exported PNG.
   return (
     <div className={`flex items-center gap-2 ${compact ? 'mt-2 mb-1 first:mt-0' : 'mt-4 mb-1.5 first:mt-1'}`}>
       <div
@@ -30,9 +35,7 @@ function DayHeader({ night, compact = false }) {
       </div>
       <div
         className="flex-1 h-px"
-        style={{
-          background: `linear-gradient(to right, ${info.color}88, ${info.color}11 60%, transparent)`,
-        }}
+        style={{ backgroundColor: `${info.color}55` }}
       />
     </div>
   );
@@ -1050,10 +1053,13 @@ function App() {
       // Tighten meetup card padding for the exported image — the natural
       // py-3 (12px top/bottom) felt loose in screenshots. Also strip any
       // overflow:hidden / text-ellipsis on descendants so html2canvas can't
-      // clip glyphs at row boundaries.
-      offscreenElement.querySelectorAll('.meetup-card').forEach((card) => {
+      // clip glyphs at row boundaries. Each card gets a corner number badge
+      // (1, 2, 3…) that pairs with a matching pin on the festival map
+      // injected above the cards (see below).
+      offscreenElement.querySelectorAll('.meetup-card').forEach((card, cardIdx) => {
         card.style.paddingTop = '10px';
         card.style.paddingBottom = '10px';
+        card.style.position = 'relative';
         card.querySelectorAll('*').forEach((node) => {
           if (node instanceof HTMLElement) {
             const cs = window.getComputedStyle(node);
@@ -1066,7 +1072,66 @@ function App() {
             }
           }
         });
+        const badge = document.createElement('div');
+        badge.textContent = String(cardIdx + 1);
+        badge.style.cssText =
+          'position:absolute;left:-8px;top:-10px;width:28px;height:28px;' +
+          'background:#39ff14;color:#000;border:2px solid #000;' +
+          'box-shadow:0 0 0 2px #fff;border-radius:50%;' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'font-weight:900;font-size:13px;font-family:Inter,sans-serif;' +
+          'line-height:1;z-index:5;';
+        card.insertBefore(badge, card.firstChild);
       });
+
+      // Inject the festival map at the top of the export with a numbered
+      // pin per meetup. Pairs with the corner badge on each card so a
+      // shared screenshot is self-contained — recipients can see at a
+      // glance where each meetup lands on the festival grounds without
+      // needing the app open. Stages without map coords (YeeDC!) get a
+      // numbered card but no pin; that's acceptable since the omission is
+      // intentional and the card still shows the landmark text.
+      const pinsHtml = meetupPlan
+        .map((meetup, idx) => {
+          const c = getStageMapCoords(meetup.beforeStage);
+          if (!c) return '';
+          return (
+            `<div style="position:absolute;left:${c.x}%;top:${c.y}%;` +
+            `transform:translate(-50%,-50%);width:30px;height:30px;` +
+            `background:#39ff14;color:#000;border:3px solid #000;` +
+            `box-shadow:0 0 0 2px #fff,0 0 12px 2px rgba(57,255,20,0.6);` +
+            `border-radius:50%;display:flex;align-items:center;` +
+            `justify-content:center;font-weight:900;font-size:15px;` +
+            `font-family:Inter,sans-serif;line-height:1;">${idx + 1}</div>`
+          );
+        })
+        .join('');
+      const mapWrapper = document.createElement('div');
+      mapWrapper.style.cssText =
+        'margin:12px 0 16px;border-radius:12px;overflow:hidden;' +
+        'border:1px solid rgba(155,108,255,0.3);background:rgba(0,0,0,0.3);';
+      mapWrapper.innerHTML =
+        '<div style="background:rgba(0,0,0,0.4);padding:8px 12px;' +
+        "font-family:'Orbitron',sans-serif;font-size:10px;" +
+        'letter-spacing:0.25em;color:#2dd4ff;text-transform:uppercase;' +
+        'text-align:center;">Festival Map · Meetup Locations</div>' +
+        '<div style="position:relative;">' +
+        // crossOrigin omitted on purpose — the asset is served same-origin
+        // from /public, and adding crossorigin can flip the browser into a
+        // CORS preflight that the dev server doesn't always answer cleanly.
+        '<img src="/edc-map-2026.jpg" alt="EDC 2026 festival map" ' +
+        'style="width:100%;display:block;" />' +
+        pinsHtml +
+        '</div>';
+      const cardsContainer = offscreenElement.querySelector('[class*="space-y-4"]');
+      if (cardsContainer && cardsContainer.parentNode) {
+        cardsContainer.parentNode.insertBefore(mapWrapper, cardsContainer);
+      } else {
+        // Fallback — append at the top of the cloned plan if the cards
+        // container can't be located (defensive; current markup always
+        // matches the selector above).
+        offscreenElement.insertBefore(mapWrapper, offscreenElement.firstChild);
+      }
 
       // Position the clone offscreen at a fixed share-friendly width.
       offscreenContainer = document.createElement('div');
@@ -1095,9 +1160,13 @@ function App() {
       // html2canvas options. Pass explicit width/height to avoid the
       // viewport-clip behavior that was cutting off the last card's
       // meetup-spot row in tall plans.
+      // Capped at 2x for the meetup-plan export — desktop used to render
+      // at 3x but the embedded festival map makes the PNG balloon to ~6 MB
+      // (too heavy for a casual iMessage share). 2x still lands well under
+      // 3 MB while keeping text crisp.
       const options = {
         backgroundColor: '#121212',
-        scale: window.innerWidth < 768 ? 2 : 3,
+        scale: 2,
         logging: false,
         allowTaint: true,
         useCORS: true,
@@ -1124,8 +1193,26 @@ function App() {
       };
       
 
+      // Wait for the injected festival map image to finish loading before
+      // html2canvas captures — without this, a cold cache renders the
+      // export with a blank map (the pins still show but on nothing). We
+      // also race against a 4 s timeout so a slow / failing image never
+      // hangs the export indefinitely; html2canvas will then either render
+      // a placeholder space or skip the broken image, but the cards are
+      // still saved.
+      const mapImg = offscreenElement.querySelector('img[alt*="festival map"]');
+      const mapImgLoaded = mapImg && !mapImg.complete
+        ? new Promise((resolve) => {
+            const done = () => resolve();
+            mapImg.addEventListener('load', done, { once: true });
+            mapImg.addEventListener('error', done, { once: true });
+            setTimeout(done, 4000);
+          })
+        : Promise.resolve();
+
       // Capture and handle saving
-      html2canvas(offscreenElement, options)
+      mapImgLoaded
+        .then(() => html2canvas(offscreenElement, options))
         .then(canvas => {
           const date = new Date().toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }).replace(/\s/g,'-');
           const filename = `Festival-Meetup-Plan-${date}.png`;
@@ -1329,7 +1416,7 @@ function App() {
           header = `
             <div style="display:flex;align-items:center;gap:8px;${isFirst ? 'margin-top:2px' : 'margin-top:14px'};margin-bottom:4px;">
               <div style="font-family:'Orbitron',sans-serif;font-size:10px;font-weight:700;letter-spacing:0.25em;color:${dayInfo.color};text-transform:uppercase;text-shadow:0 0 8px ${dayInfo.glow};white-space:nowrap;">${dayInfo.short} · ${escapeHtml(dayInfo.date)}</div>
-              <div style="flex:1;height:1px;background:linear-gradient(to right, ${dayInfo.color}88, ${dayInfo.color}11 60%, transparent);"></div>
+              <div style="flex:1;height:1px;background-color:${dayInfo.color}55;"></div>
             </div>
           `;
           prevNight = night;
