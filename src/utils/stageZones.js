@@ -80,34 +80,3 @@ export function getStageMeetupSpot(stage) {
   if (!stage) return '';
   return STAGE_MEETUP_SPOTS[stage] || '';
 }
-
-// Approximate position of each stage on the official EDC Las Vegas 2026
-// festival map, expressed as percentages (x: 0-100 left→right, y: 0-100
-// top→bottom of the FULL map image including the right-side legend).
-// Calibrated against the published map by overlaying a 10% grid in the
-// browser; nudge any pin by 1-2% if it lands a smidge off — does not need
-// to be pixel-perfect to be useful.
-const STAGE_MAP_COORDS = {
-  'Kinetic Field':                { x: 42, y: 18 },
-  'Casa Bacardí':                 { x: 30, y: 22 },
-  'Stereo Bloom':                 { x: 30, y: 34 },
-  'Insomniac Fridays':            { x: 36, y: 31 },
-  'BeatBox Art Car':              { x: 28, y: 41 },
-  'Picnic Party Art Car':         { x: 36, y: 38 },
-  'Quantum Valley':               { x: 58, y: 29 },
-  'Neon Garden':                  { x: 62, y: 49 },
-  'Forest House':                 { x: 60, y: 64 },
-  'Bionic Jungle':                { x: 14, y: 27 },
-  'Cosmic Meadow':                { x: 17, y: 42 },
-  Basspod:                        { x: 38, y: 80 },
-  'Circuit Grounds':              { x: 58, y: 80 },
-  Wasteland:                      { x: 19, y: 78 },
-  'Takis Rave Hangar':            { x: 40, y: 47 },
-  'Electrolit Hydration House':   { x: 32, y: 58 },
-  // YeeDC! is not labelled on the published 2026 map.
-};
-
-export function getStageMapCoords(stage) {
-  if (!stage) return null;
-  return STAGE_MAP_COORDS[stage] || null;
-}

@@ -7,11 +7,10 @@ import './App.css';
 import FestivalScheduleUploader from './components/FestivalScheduleUploader';
 import VenmoTipJar from './components/VenmoTipJar';
 import EDCPicker from './components/EDCPicker';
-import FestivalMap from './components/FestivalMap';
 // Import removed - no longer needed
 import findSharedGaps from './utils/findSharedGaps';
 import festivalSchedule from './data/festivalSchedule';
-import { getDayInfo, getStageMeetupSpot, getStageMapCoords } from './utils/stageZones';
+import { getDayInfo, getStageMeetupSpot } from './utils/stageZones';
 
 // Day separator drawn above the first set of each festival night in long
 // schedule lists. Visually anchored in the night's color (Fri = cyan,
@@ -342,9 +341,6 @@ function App() {
   const [editingLocation, setEditingLocation] = useState('');
   const [noGapsFound, setNoGapsFound] = useState(false);
 
-  // FestivalMap modal: open when set, closed when null. Holds the meetup
-  // index whose stage should be pinned on the map.
-  const [mapModalIdx, setMapModalIdx] = useState(null);
   
   // These variables have been removed as they're no longer needed
   
@@ -1053,13 +1049,10 @@ function App() {
       // Tighten meetup card padding for the exported image — the natural
       // py-3 (12px top/bottom) felt loose in screenshots. Also strip any
       // overflow:hidden / text-ellipsis on descendants so html2canvas can't
-      // clip glyphs at row boundaries. Each card gets a corner number badge
-      // (1, 2, 3…) that pairs with a matching pin on the festival map
-      // injected above the cards (see below).
-      offscreenElement.querySelectorAll('.meetup-card').forEach((card, cardIdx) => {
+      // clip glyphs at row boundaries.
+      offscreenElement.querySelectorAll('.meetup-card').forEach((card) => {
         card.style.paddingTop = '10px';
         card.style.paddingBottom = '10px';
-        card.style.position = 'relative';
         card.querySelectorAll('*').forEach((node) => {
           if (node instanceof HTMLElement) {
             const cs = window.getComputedStyle(node);
@@ -1072,133 +1065,14 @@ function App() {
             }
           }
         });
-        // Number badge — line-height-based vertical centering instead of
-        // flex; html2canvas was rendering the digit slightly above center
-        // with the previous flex setup. box-sizing: border-box keeps the
-        // 28px outer footprint stable as the border thickens it.
-        const badge = document.createElement('div');
-        badge.textContent = String(cardIdx + 1);
-        badge.style.cssText =
-          'position:absolute;left:-10px;top:-10px;' +
-          'box-sizing:border-box;width:28px;height:28px;' +
-          'background:#39ff14;color:#000;border:2px solid #000;' +
-          'box-shadow:0 0 0 2px #fff;border-radius:50%;' +
-          'text-align:center;line-height:24px;padding:0;' +
-          'font-weight:900;font-size:14px;' +
-          "font-family:'Helvetica Neue',Inter,Arial,sans-serif;" +
-          'z-index:5;';
-        card.insertBefore(badge, card.firstChild);
       });
 
-      // Build the cropped festival map column with numbered green pins.
-      //
-      // Layout target (per user feedback): cards stack on the LEFT going
-      // downwards, the map sits on the RIGHT cropped down to just the
-      // festival oval (legend / EDC logo / dates removed). Each pin uses
-      // line-height-based centering so the digit lands dead center; flex
-      // centering rendered slightly off in html2canvas.
-      //
-      // Cropping math: the festival oval in the source 1073×1341 image
-      // sits roughly at x=20→580 (560 px wide) and y=70→1290 (1220 px
-      // tall). We render the full image inside an inner div sized so the
-      // oval fills MAP_W, then translate it inside an overflow:hidden
-      // outer div clipped to (MAP_W × ovalH * scale) to show only the
-      // oval. Pins use the same percentages as the live FestivalMap modal
-      // because they're anchored to the (full) inner image div.
-      // Crop window. Reviewer noted clipping at top + right of the oval
-      // with the previous tighter values (710 × 1200), so we now show the
-      // FULL height of the source image and only crop the right legend
-      // panel. That guarantees nothing in the festival oval gets cut off
-      // — slightly more whitespace top/bottom is an acceptable trade.
-      const MAP_W = 400;
-      const OVAL_NATIVE_W = 730;
-      const OVAL_NATIVE_H = 1341;
-      const OVAL_OFFSET_X = 0;
-      const OVAL_OFFSET_Y = 0;
-      const mapScale = MAP_W / OVAL_NATIVE_W;
-      const innerImgW = Math.round(1073 * mapScale);
-      const innerImgH = Math.round(1341 * mapScale);
-      const cropH = Math.round(OVAL_NATIVE_H * mapScale);
-      const cropOffX = -Math.round(OVAL_OFFSET_X * mapScale);
-      const cropOffY = -Math.round(OVAL_OFFSET_Y * mapScale);
-
-      // Pin shape: numbered round badge anchored BOTTOM-center at the
-      // landmark coordinate (transform translate(-50%, -100%)) plus a
-      // small filled triangle below the badge whose tip lands exactly on
-      // the landmark. This way the badge body sits just ABOVE the
-      // landmark — the artwork (Zero Gravity sculpture, 64 TAPS, etc.) is
-      // no longer hidden under the pin, while the triangle tail makes
-      // the exact spot unambiguous. CSS-triangle borders survive
-      // html2canvas just fine.
-      const pinsHtml = meetupPlan
-        .map((meetup, idx) => {
-          const c = getStageMapCoords(meetup.beforeStage);
-          if (!c) return '';
-          return (
-            `<div style="position:absolute;left:${c.x}%;top:${c.y}%;` +
-            `transform:translate(-50%,-100%);text-align:center;` +
-            `filter:drop-shadow(0 1px 2px rgba(0,0,0,0.6));">` +
-            `<div style="box-sizing:border-box;width:24px;height:24px;` +
-            `background:#39ff14;color:#000;border:2px solid #000;` +
-            `border-radius:50%;text-align:center;line-height:20px;` +
-            `font-weight:900;font-size:13px;` +
-            `font-family:'Helvetica Neue',Inter,Arial,sans-serif;">${idx + 1}</div>` +
-            `<div style="width:0;height:0;margin:-3px auto 0;` +
-            `border-left:6px solid transparent;` +
-            `border-right:6px solid transparent;` +
-            `border-top:8px solid #39ff14;"></div>` +
-            `</div>`
-          );
-        })
-        .join('');
-
-      const mapColumn = document.createElement('div');
-      mapColumn.style.cssText =
-        `width:${MAP_W}px;flex-shrink:0;border-radius:12px;` +
-        'overflow:hidden;border:1px solid rgba(155,108,255,0.3);' +
-        'background:rgba(0,0,0,0.3);';
-      mapColumn.innerHTML =
-        '<div style="background:rgba(0,0,0,0.4);padding:8px 12px;' +
-        "font-family:'Orbitron',sans-serif;font-size:10px;" +
-        'letter-spacing:0.25em;color:#2dd4ff;text-transform:uppercase;' +
-        'text-align:center;">Meetup locations</div>' +
-        `<div style="position:relative;width:${MAP_W}px;height:${cropH}px;overflow:hidden;">` +
-        `<div style="position:absolute;width:${innerImgW}px;height:${innerImgH}px;` +
-        `left:${cropOffX}px;top:${cropOffY}px;">` +
-        '<img src="/edc-map-2026.jpg" alt="EDC 2026 festival map" ' +
-        'style="width:100%;display:block;" />' +
-        pinsHtml +
-        '</div></div>';
-
-      // Reorganise the cloned plan so cards stack on the left and the
-      // cropped map sits on the right. We grab the live cards container
-      // and wrap it together with the map in a flex row.
-      const cardsContainer = offscreenElement.querySelector('[class*="space-y-4"]');
-      if (cardsContainer && cardsContainer.parentNode) {
-        const sideRow = document.createElement('div');
-        sideRow.style.cssText =
-          'display:flex;gap:16px;align-items:flex-start;margin-top:8px;';
-        cardsContainer.parentNode.insertBefore(sideRow, cardsContainer);
-        // Cards become the left flex item; force min-width:0 so long
-        // strings can shrink-to-fit instead of pushing the row wider.
-        sideRow.appendChild(cardsContainer);
-        cardsContainer.style.flex = '1 1 0';
-        cardsContainer.style.minWidth = '0';
-        sideRow.appendChild(mapColumn);
-      } else {
-        // Defensive fallback — cards container missing (current markup
-        // always matches the selector above, but don't drop the map on
-        // the floor if that ever changes).
-        offscreenElement.insertBefore(mapColumn, offscreenElement.firstChild);
-      }
-
-      // Position the clone offscreen. Width = 1000 leaves ~580 px for the
-      // cards column (940 → 1000 to accommodate the wider 400-px map).
+      // Position the clone offscreen at a fixed share-friendly width.
       offscreenContainer = document.createElement('div');
       offscreenContainer.style.position = 'absolute';
       offscreenContainer.style.left = '-9999px';
       offscreenContainer.style.top = '0';
-      offscreenContainer.style.width = '1000px';
+      offscreenContainer.style.width = '600px';
       offscreenContainer.style.padding = '4px';
       offscreenContainer.appendChild(offscreenElement);
       document.body.appendChild(offscreenContainer);
@@ -1220,13 +1094,9 @@ function App() {
       // html2canvas options. Pass explicit width/height to avoid the
       // viewport-clip behavior that was cutting off the last card's
       // meetup-spot row in tall plans.
-      // Capped at 2x for the meetup-plan export — desktop used to render
-      // at 3x but the embedded festival map makes the PNG balloon to ~6 MB
-      // (too heavy for a casual iMessage share). 2x still lands well under
-      // 3 MB while keeping text crisp.
       const options = {
         backgroundColor: '#121212',
-        scale: 2,
+        scale: window.innerWidth < 768 ? 2 : 3,
         logging: false,
         allowTaint: true,
         useCORS: true,
@@ -1253,26 +1123,8 @@ function App() {
       };
       
 
-      // Wait for the injected festival map image to finish loading before
-      // html2canvas captures — without this, a cold cache renders the
-      // export with a blank map (the pins still show but on nothing). We
-      // also race against a 4 s timeout so a slow / failing image never
-      // hangs the export indefinitely; html2canvas will then either render
-      // a placeholder space or skip the broken image, but the cards are
-      // still saved.
-      const mapImg = offscreenElement.querySelector('img[alt*="festival map"]');
-      const mapImgLoaded = mapImg && !mapImg.complete
-        ? new Promise((resolve) => {
-            const done = () => resolve();
-            mapImg.addEventListener('load', done, { once: true });
-            mapImg.addEventListener('error', done, { once: true });
-            setTimeout(done, 4000);
-          })
-        : Promise.resolve();
-
       // Capture and handle saving
-      mapImgLoaded
-        .then(() => html2canvas(offscreenElement, options))
+      html2canvas(offscreenElement, options)
         .then(canvas => {
           const date = new Date().toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }).replace(/\s/g,'-');
           const filename = `Festival-Meetup-Plan-${date}.png`;
@@ -2834,22 +2686,11 @@ If the image isn't readable, reply exactly:
                               {meetup.beforeCommonArtist || 'next artist'}
                             </span>
                           </div>
-                          <div className="flex items-baseline gap-1.5 mt-0.5 flex-wrap">
+                          <div className="flex items-baseline gap-1.5 mt-0.5">
                             <span className="text-[10px] uppercase tracking-widest text-white/40">Stage:</span>
                             <span className="text-edc-blue/80 text-xs">
                               {meetup.beforeStage || 'unknown stage'}
                             </span>
-                            {/* "Show on map" — opens a modal pinning this stage on
-                                the official EDC 2026 festival map so users can
-                                navigate to the meetup spot visually. Hidden in
-                                screenshots so the exported image stays clean. */}
-                            <button
-                              onClick={() => setMapModalIdx(idx)}
-                              className="text-[10px] font-orbitron tracking-wider uppercase text-edc-pink/70 hover:text-edc-pink underline-offset-2 hover:underline transition-colors hide-in-screenshot ml-auto"
-                              title="Show this stage on the festival map"
-                            >
-                              📍 Show on map
-                            </button>
                           </div>
 
                       <div className="text-xs text-white/60 mt-1.5">
@@ -3132,17 +2973,6 @@ If the image isn't readable, reply exactly:
         onSave={handleEDCPickerSave}
         onCancel={() => setPickerOpen(false)}
       />
-
-      {/* Festival map modal — opens from "Show on map" on each meetup card,
-          drops a pin on the upcoming common-set stage. Reads from the live
-          meetupPlan so the latest custom landmark text is reflected. */}
-      {mapModalIdx !== null && meetupPlan[mapModalIdx] && (
-        <FestivalMap
-          stage={meetupPlan[mapModalIdx].beforeStage}
-          landmark={meetupPlan[mapModalIdx].customLocation}
-          onClose={() => setMapModalIdx(null)}
-        />
-      )}
     </div>
   );
 }
